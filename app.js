@@ -44,8 +44,12 @@ io.on('connection', (socket) => {
 
 		if(messages[path] !== undefined){
 			for(let a = 0; a < messages[path].length; ++a){
-				io.to(socket.id).emit("chat-message", messages[path][a]['data'], 
-					messages[path][a]['sender'], messages[path][a]['socket-id-sender'])
+                let msg = messages[path][a];
+                // Отправляем пользователю историю, только если это публичное сообщение, 
+                // или если он является отправителем/получателем этого приватного сообщения
+                if (!msg.to || msg.to === 'All' || msg.to === socket.id || msg['socket-id-sender'] === socket.id) {
+                    io.to(socket.id).emit("chat-message", msg.data, msg.sender, msg['socket-id-sender'], msg.isPrivate)
+                }
 			}
 		}
 
@@ -56,7 +60,8 @@ io.on('connection', (socket) => {
 		io.to(toId).emit('signal', socket.id, message)
 	})
 
-	socket.on('chat-message', (data, sender) => {
+	// Добавлен аргумент toSocketId для приватных сообщений
+	socket.on('chat-message', (data, sender, toSocketId) => {
 		data = sanitizeString(data)
 		sender = sanitizeString(sender)
 
@@ -75,12 +80,24 @@ io.on('connection', (socket) => {
 			if(messages[key] === undefined){
 				messages[key] = []
 			}
-			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id})
-			console.log("message", key, ":", sender, data)
+            
+            let isPrivate = toSocketId && toSocketId !== 'All';
+			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate})
+			console.log("message", key, ":", sender, data, "to:", toSocketId)
 
-			for(let a = 0; a < connections[key].length; ++a){
-				io.to(connections[key][a]).emit("chat-message", data, sender, socket.id)
-			}
+            if (isPrivate) {
+                // Отправляем личное сообщение получателю
+                io.to(toSocketId).emit("chat-message", data, sender, socket.id, true)
+                // И дублируем отправителю, чтобы он видел его в своем чате
+                if (toSocketId !== socket.id) {
+                    io.to(socket.id).emit("chat-message", data, sender, socket.id, true)
+                }
+            } else {
+                // Публичное сообщение (всем в комнате)
+                for(let a = 0; a < connections[key].length; ++a){
+                    io.to(connections[key][a]).emit("chat-message", data, sender, socket.id, false)
+                }
+            }
 		}
 	})
 

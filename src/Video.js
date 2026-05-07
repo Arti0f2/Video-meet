@@ -53,6 +53,7 @@ class Video extends Component {
 			newmessages: 0,
 			askForUsername: true,
 			username: faker.internet.userName(),
+            recipient: "All", // Добавлено состояние для выбора получателя
 		}
 		connections = {}
 
@@ -294,7 +295,7 @@ class Video extends Component {
 			socket.on('user-joined', (id, clients) => {
 				clients.forEach((socketListId) => {
 					connections[socketListId] = new RTCPeerConnection(peerConnectionConfig)
-					// Wait for their ice candidate       
+					// Wait for their ice candidate
 					connections[socketListId].onicecandidate = function (event) {
 						if (event.candidate != null) {
 							socket.emit('signal', socketListId, JSON.stringify({ 'ice': event.candidate }))
@@ -346,7 +347,7 @@ class Video extends Component {
 						try {
 							connections[id2].addStream(window.localStream)
 						} catch(e) {}
-			
+
 						connections[id2].createOffer().then((description) => {
 							connections[id2].setLocalDescription(description)
 								.then(() => {
@@ -391,9 +392,10 @@ class Video extends Component {
 	closeChat = () => this.setState({ showModal: false })
 	handleMessage = (e) => this.setState({ message: e.target.value })
 
-	addMessage = (data, sender, socketIdSender) => {
+    // Добавлен isPrivate для отображения статуса сообщения
+	addMessage = (data, sender, socketIdSender, isPrivate = false) => {
 		this.setState(prevState => ({
-			messages: [...prevState.messages, { "sender": sender, "data": data }],
+			messages: [...prevState.messages, { "sender": sender, "data": data, "isPrivate": isPrivate }],
 		}))
 		if (socketIdSender !== socketId) {
 			this.setState({ newmessages: this.state.newmessages + 1 })
@@ -403,7 +405,8 @@ class Video extends Component {
 	handleUsername = (e) => this.setState({ username: e.target.value })
 
 	sendMessage = () => {
-		socket.emit('chat-message', this.state.message, this.state.username)
+        // Передаем получателя (this.state.recipient) при отправке
+		socket.emit('chat-message', this.state.message, this.state.username, this.state.recipient)
 		this.setState({ message: "", sender: this.state.username })
 	}
 
@@ -445,8 +448,7 @@ class Video extends Component {
 	render() {
 		if(this.isChrome() === false){
 			return (
-				<div style={{background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "400px",
-						textAlign: "center", margin: "auto", marginTop: "50px", justifyContent: "center"}}>
+				<div style={{background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "400px", textAlign: "center", margin: "auto", marginTop: "50px", justifyContent: "center"}}>
 					<h1>Sorry, this works only with Google Chrome</h1>
 				</div>
 			)
@@ -455,8 +457,7 @@ class Video extends Component {
 			<div>
 				{this.state.askForUsername === true ?
 					<div>
-						<div style={{background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "400px",
-								textAlign: "center", margin: "auto", marginTop: "50px", justifyContent: "center"}}>
+						<div style={{background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "400px", textAlign: "center", margin: "auto", marginTop: "50px", justifyContent: "center"}}>
 							<p style={{ margin: 0, fontWeight: "bold", paddingRight: "50px" }}>Set your username</p>
 							<Input placeholder="Username" value={this.state.username} onChange={e => this.handleUsername(e)} />
 							<Button variant="contained" color="primary" onClick={this.connect} style={{ margin: "20px" }}>Connect</Button>
@@ -502,11 +503,25 @@ class Video extends Component {
 							<Modal.Body style={{ overflow: "auto", overflowY: "auto", height: "400px", textAlign: "left" }} >
 								{this.state.messages.length > 0 ? this.state.messages.map((item, index) => (
 									<div key={index} style={{textAlign: "left"}}>
-										<p style={{ wordBreak: "break-all" }}><b>{item.sender}</b>: {item.data}</p>
+										<p style={{ wordBreak: "break-all" }}>
+                                            <b>{item.sender} {item.isPrivate ? <span style={{color: "red"}}>(Private)</span> : ""}</b>: {item.data}
+                                        </p>
 									</div>
 								)) : <p>No message yet</p>}
 							</Modal.Body>
 							<Modal.Footer className="div-send-msg">
+                                {/* Выпадающий список для выбора получателя */}
+                                <select 
+                                    style={{ padding: "6px", borderRadius: "4px", border: "1px solid #ced4da", marginRight: "10px" }}
+                                    value={this.state.recipient} 
+                                    onChange={e => this.setState({ recipient: e.target.value })}
+                                >
+                                    <option value="All">All</option>
+                                    {Object.keys(connections).map(id => (
+                                        id !== socketId ? <option key={id} value={id}>User {id.substring(0, 5)}</option> : null
+                                    ))}
+                                </select>
+
 								<Input placeholder="Message" value={this.state.message} onChange={e => this.handleMessage(e)} />
 								<Button variant="contained" color="primary" onClick={this.sendMessage}>Send</Button>
 							</Modal.Footer>
@@ -515,7 +530,8 @@ class Video extends Component {
 						<div className="container">
 							<div style={{ paddingTop: "20px" }}>
 								<Input value={window.location.href} disable="true"></Input>
-								<Button style={{backgroundColor: "#3f51b5",color: "whitesmoke",marginLeft: "20px",
+								<Button style={{
+									backgroundColor: "#3f51b5",color: "whitesmoke",marginLeft: "20px",
 									marginTop: "10px",width: "120px",fontSize: "10px"
 								}} onClick={this.copyUrl}>Copy invite link</Button>
 							</div>
