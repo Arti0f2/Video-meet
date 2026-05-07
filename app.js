@@ -5,13 +5,59 @@ const app = express()
 const bodyParser = require('body-parser')
 const path = require("path")
 var xss = require("xss")
+const fs = require('fs') // Добавляем работу с файловой системой
 
 var server = http.createServer(app)
-// Увеличиваем лимит размера сообщения до ~50 МБ для поддержки передачи файлов
+// Сохраняем увеличенный лимит для передачи файлов
 var io = require('socket.io')(server, { pingTimeout: 60000, maxHttpBufferSize: 5e7 })
 
 app.use(cors())
 app.use(bodyParser.json())
+
+// --- НАЧАЛО: Логика "Базы данных" в JSON файле ---
+const meetingsFilePath = path.join(__dirname, 'meetings.json')
+
+// Создаем файл, если его еще нет
+if (!fs.existsSync(meetingsFilePath)) {
+    fs.writeFileSync(meetingsFilePath, JSON.stringify([]))
+}
+
+// API: Получить список всех запланированных встреч
+app.get('/api/meetings', (req, res) => {
+    try {
+        const data = fs.readFileSync(meetingsFilePath, 'utf8')
+        res.json(JSON.parse(data))
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to read meetings file' })
+    }
+})
+
+// API: Запланировать новую встречу
+app.post('/api/meetings', (req, res) => {
+    try {
+        const { title, date, url } = req.body
+        if (!title || !date || !url) return res.status(400).json({ error: 'Missing required fields' })
+
+        const data = fs.readFileSync(meetingsFilePath, 'utf8')
+        const meetings = JSON.parse(data)
+        
+        const newMeeting = {
+            id: Date.now().toString(),
+            title: xss(title), // Защита от XSS
+            date: xss(date),
+            url: xss(url)
+        }
+        
+        meetings.push(newMeeting)
+        // Сохраняем обновленный массив обратно в файл
+        fs.writeFileSync(meetingsFilePath, JSON.stringify(meetings, null, 2))
+        
+        res.json(newMeeting)
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save meeting' })
+    }
+})
+// --- КОНЕЦ: Логика JSON-базы ---
 
 if(process.env.NODE_ENV==='production'){
 	app.use(express.static(__dirname+"/build"))
@@ -63,7 +109,6 @@ io.on('connection', (socket) => {
 		io.to(toId).emit('signal', socket.id, message)
 	})
 
-	// Обработчик текстовых сообщений
 	socket.on('chat-message', (data, sender, toSocketId) => {
 		data = sanitizeString(data)
 		sender = sanitizeString(sender)
@@ -101,11 +146,9 @@ io.on('connection', (socket) => {
 		}
 	})
 
-    // НОВЫЙ: Обработчик для отправки файлов
     socket.on('chat-file', (data, sender, toSocketId, fileName) => {
 		sender = sanitizeString(sender)
 		fileName = sanitizeString(fileName)
-        // Строку Base64 'data' не санируем xss(), иначе испортится кодировка файла
 
 		var key
 		var ok = false
