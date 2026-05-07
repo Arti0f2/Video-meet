@@ -5,71 +5,132 @@ const app = express()
 const bodyParser = require('body-parser')
 const path = require("path")
 var xss = require("xss")
-const fs = require('fs') // Добавляем работу с файловой системой
+const fs = require('fs')
+const multer = require('multer')
 
 var server = http.createServer(app)
-// Сохраняем увеличенный лимит для передачи файлов
+// Увеличен лимит размера сообщения до ~50 МБ для поддержки передачи файлов в чате
 var io = require('socket.io')(server, { pingTimeout: 60000, maxHttpBufferSize: 5e7 })
+
+// --- НАСТРОЙКА ХРАНИЛИЩА ЗАПИСЕЙ (MULTER) ---
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Получаем имя папки из текстового поля (по умолчанию 'general')
+        // Очищаем от спецсимволов для безопасности файловой системы
+        let folderName = req.body.folder ? req.body.folder.replace(/[^a-zA-Z0-9а-яА-Я_\-\s]/g, '_') : 'general';
+        if (!folderName.trim()) folderName = 'general';
+
+        const dir = path.join(__dirname, 'recordings', folderName);
+        // Создаем папку, если её нет (recursive: true позволяет создавать вложенные папки)
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `recording-${Date.now()}.webm`);
+    }
+});
+const upload = multer({ storage: storage });
 
 app.use(cors())
 app.use(bodyParser.json())
+// Раздаем всю папку recordings как статику, чтобы видео можно было смотреть по ссылке
+app.use('/recordings', express.static(path.join(__dirname, 'recordings'))) 
 
-// --- НАЧАЛО: Логика "Базы данных" в JSON файле ---
+if(process.env.NODE_ENV === 'production'){
+	app.use(express.static(__dirname + "/build"))
+	app.get("*", (req, res) => {
+		res.sendFile(path.join(__dirname + "/build/index.html"))
+	})
+}
+app.set('port', (process.env.PORT || 4001))
+
+// --- API ДЛЯ ПЛАНИРОВАНИЯ ВСТРЕЧ (JSON-БД) ---
 const meetingsFilePath = path.join(__dirname, 'meetings.json')
-
-// Создаем файл, если его еще нет
+// Создаем файл для встреч, если его еще нет
 if (!fs.existsSync(meetingsFilePath)) {
     fs.writeFileSync(meetingsFilePath, JSON.stringify([]))
 }
 
-// API: Получить список всех запланированных встреч
 app.get('/api/meetings', (req, res) => {
     try {
         const data = fs.readFileSync(meetingsFilePath, 'utf8')
         res.json(JSON.parse(data))
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to read meetings file' })
+    } catch(e) { 
+        res.json([]) 
     }
 })
 
-// API: Запланировать новую встречу
 app.post('/api/meetings', (req, res) => {
     try {
         const { title, date, url } = req.body
-        if (!title || !date || !url) return res.status(400).json({ error: 'Missing required fields' })
-
         const data = fs.readFileSync(meetingsFilePath, 'utf8')
         const meetings = JSON.parse(data)
         
-        const newMeeting = {
-            id: Date.now().toString(),
-            title: xss(title), // Защита от XSS
-            date: xss(date),
-            url: xss(url)
+        const newMeeting = { 
+            id: Date.now().toString(), 
+            title: xss(title), 
+            date: xss(date), 
+            url: xss(url) 
         }
         
         meetings.push(newMeeting)
-        // Сохраняем обновленный массив обратно в файл
         fs.writeFileSync(meetingsFilePath, JSON.stringify(meetings, null, 2))
-        
         res.json(newMeeting)
     } catch (err) {
         res.status(500).json({ error: 'Failed to save meeting' })
     }
 })
-// --- КОНЕЦ: Логика JSON-базы ---
 
-if(process.env.NODE_ENV==='production'){
-	app.use(express.static(__dirname+"/build"))
-	app.get("*", (req, res) => {
-		res.sendFile(path.join(__dirname+"/build/index.html"))
-	})
-}
-app.set('port', (process.env.PORT || 4001))
+// --- API ДЛЯ ЗАПИСЕЙ ---
+// Сохранение новой записи
+app.post('/api/upload-recording', upload.single('video'), (req, res) => {
+    res.json({ message: 'Запись успешно сохранена', file: req.file.filename });
+});
 
-sanitizeString = (str) => {
-	return xss(str)
-}
+// Получение списка всех записей (сканирование подпапок)
+app.get('/api/recordings', (req, res) => {
+    const baseDir = path.join(__dirname, 'recordings');
+    if (!fs.existsSync(baseDir)) return res.json([]);
+
+    let allFiles = [];
+    const items = fs.readdirSync(baseDir);
+
+    items.forEach(item => {
+        const itemPath = path.join(baseDir, item);
+        
+        // Если это папка, заходим внутрь
+        if (fs.statSync(itemPath).isDirectory()) {
+            const files = fs.readdirSync(itemPath);
+            files.forEach(file => {
+                if (file.endsWith('.webm')) {
+                    allFiles.push({
+                        folder: item,
+                        name: file,
+                        url: `/recordings/${item}/${file}`,
+                        date: new Date(parseInt(file.split('-')[1])).toLocaleString()
+                    });
+                }
+            });
+        } 
+        // Обратная совместимость: если файлы лежат прямо в корне recordings
+        else if (item.endsWith('.webm')) {
+            allFiles.push({
+                folder: 'general',
+                name: item,
+                url: `/recordings/${item}`,
+                date: new Date(parseInt(item.split('-')[1])).toLocaleString()
+            });
+        }
+    });
+
+    res.json(allFiles);
+});
+
+// --- СЕРВЕРНАЯ ЛОГИКА SOCKET.IO ---
+sanitizeString = (str) => { return xss(str) }
 
 connections = {}
 messages = {}
@@ -82,16 +143,18 @@ io.on('connection', (socket) => {
 			connections[path] = []
 		}
 		connections[path].push(socket.id)
-
 		timeOnline[socket.id] = new Date()
 
 		for(let a = 0; a < connections[path].length; ++a){
 			io.to(connections[path][a]).emit("user-joined", socket.id, connections[path])
 		}
 
+        // Отправка истории сообщений новому участнику
 		if(messages[path] !== undefined){
 			for(let a = 0; a < messages[path].length; ++a){
                 let msg = messages[path][a];
+                
+                // Проверяем, имеет ли пользователь право видеть это сообщение (общие + свои приватные)
                 if (!msg.to || msg.to === 'All' || msg.to === socket.id || msg['socket-id-sender'] === socket.id) {
                     if (msg.isFile) {
                         io.to(socket.id).emit("chat-file", msg.data, msg.sender, msg['socket-id-sender'], msg.isPrivate, msg.fileName)
@@ -109,6 +172,7 @@ io.on('connection', (socket) => {
 		io.to(toId).emit('signal', socket.id, message)
 	})
 
+    // Обработчик текстовых сообщений
 	socket.on('chat-message', (data, sender, toSocketId) => {
 		data = sanitizeString(data)
 		sender = sanitizeString(sender)
@@ -125,20 +189,29 @@ io.on('connection', (socket) => {
 		}
 
 		if(ok === true){
-			if(messages[key] === undefined){
-				messages[key] = []
-			}
+			if(messages[key] === undefined) messages[key] = []
             
             let isPrivate = toSocketId && toSocketId !== 'All';
-			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate, "isFile": false})
-			console.log("message", key, ":", sender, data, "to:", toSocketId)
+			messages[key].push({
+                "sender": sender, 
+                "data": data, 
+                "socket-id-sender": socket.id, 
+                "to": toSocketId, 
+                "isPrivate": isPrivate, 
+                "isFile": false
+            })
+			
+            console.log("message", key, ":", sender, data, "to:", toSocketId)
 
             if (isPrivate) {
+                // Отправляем личное сообщение получателю
                 io.to(toSocketId).emit("chat-message", data, sender, socket.id, true)
+                // Дублируем отправителю
                 if (toSocketId !== socket.id) {
                     io.to(socket.id).emit("chat-message", data, sender, socket.id, true)
                 }
             } else {
+                // Публичное сообщение (всем)
                 for(let a = 0; a < connections[key].length; ++a){
                     io.to(connections[key][a]).emit("chat-message", data, sender, socket.id, false)
                 }
@@ -146,9 +219,11 @@ io.on('connection', (socket) => {
 		}
 	})
 
+    // Обработчик файлов в чате
     socket.on('chat-file', (data, sender, toSocketId, fileName) => {
 		sender = sanitizeString(sender)
 		fileName = sanitizeString(fileName)
+        // Строку Base64 'data' намеренно не санируем xss(), чтобы не испортить файл
 
 		var key
 		var ok = false
@@ -162,13 +237,20 @@ io.on('connection', (socket) => {
 		}
 
 		if(ok === true){
-			if(messages[key] === undefined){
-				messages[key] = []
-			}
+			if(messages[key] === undefined) messages[key] = []
             
             let isPrivate = toSocketId && toSocketId !== 'All';
-			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate, "isFile": true, "fileName": fileName})
-			console.log("file sent", key, ":", sender, fileName, "to:", toSocketId)
+			messages[key].push({
+                "sender": sender, 
+                "data": data, 
+                "socket-id-sender": socket.id, 
+                "to": toSocketId, 
+                "isPrivate": isPrivate, 
+                "isFile": true, 
+                "fileName": fileName
+            })
+			
+            console.log("file sent", key, ":", sender, fileName, "to:", toSocketId)
 
             if (isPrivate) {
                 io.to(toSocketId).emit("chat-file", data, sender, socket.id, true, fileName)

@@ -11,11 +11,12 @@ import ScreenShareIcon from '@material-ui/icons/ScreenShare'
 import StopScreenShareIcon from '@material-ui/icons/StopScreenShare'
 import CallEndIcon from '@material-ui/icons/CallEnd'
 import ChatIcon from '@material-ui/icons/Chat'
-import AttachFileIcon from '@material-ui/icons/AttachFile' // Добавили иконку для файла
+import AttachFileIcon from '@material-ui/icons/AttachFile'
+import FiberManualRecordIcon from '@material-ui/icons/FiberManualRecord'
+import StopIcon from '@material-ui/icons/Stop'
 
 import { message } from 'antd'
 import 'antd/dist/antd.css'
-
 import { Row } from 'reactstrap'
 import Modal from 'react-bootstrap/Modal'
 import 'bootstrap/dist/css/bootstrap.css'
@@ -54,9 +55,12 @@ class Video extends Component {
 			askForUsername: true,
 			username: faker.internet.userName(),
             recipient: "All",
-            file: null, // Добавлено состояние для хранения выбранного файла
+            file: null,
+            recording: false,
 		}
 		connections = {}
+        this.mediaRecorder = null;
+        this.recordedChunks = [];
 
 		this.getPermissions()
 	}
@@ -83,7 +87,6 @@ class Video extends Component {
 						window.localStream = stream
 						this.localVideoref.current.srcObject = stream
 					})
-					.then((stream) => {})
 					.catch((e) => console.log(e))
 			}
 		} catch(e) { console.log(e) }
@@ -103,7 +106,6 @@ class Video extends Component {
 		if ((this.state.video && this.videoAvailable) || (this.state.audio && this.audioAvailable)) {
 			navigator.mediaDevices.getUserMedia({ video: this.state.video, audio: this.state.audio })
 				.then(this.getUserMediaSuccess)
-				.then((stream) => {})
 				.catch((e) => console.log(e))
 		} else {
 			try {
@@ -169,7 +171,6 @@ class Video extends Component {
 			if (navigator.mediaDevices.getDisplayMedia) {
 				navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
 					.then(this.getDislayMediaSuccess)
-					.then((stream) => {})
 					.catch((e) => console.log(e))
 			}
 		}
@@ -281,7 +282,7 @@ class Video extends Component {
 			socketId = socket.id
 
 			socket.on('chat-message', this.addMessage)
-            socket.on('chat-file', this.addFileMessage) // Подписка на файлы
+            socket.on('chat-file', this.addFileMessage)
 
 			socket.on('user-left', (id) => {
 				let video = document.querySelector(`[data-socket="${id}"]`)
@@ -359,6 +360,60 @@ class Video extends Component {
 		})
 	}
 
+    // --- ЛОГИКА ЗАПИСИ И ВЫБОРА ПАПКИ ---
+    startRecording = () => {
+        this.recordedChunks = [];
+        const stream = window.localStream;
+        
+        try {
+            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+            
+            this.mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) this.recordedChunks.push(e.data);
+            };
+            
+            this.mediaRecorder.start();
+            this.setState({ recording: true });
+            message.success("Запись началась!");
+        } catch (e) {
+            message.error("Ошибка при старте записи. Проверьте права.");
+        }
+    }
+
+    stopRecording = () => {
+        this.mediaRecorder.stop();
+        this.setState({ recording: false });
+        
+        let folderName = window.prompt("Введите название папки для сохранения (оставьте пустым для сохранения в 'general'):", "general");
+        if (folderName === null) {
+            message.info("Сохранение отменено пользователем");
+            return;
+        }
+
+        message.loading("Сохранение записи на сервер...");
+        this.saveRecordingToServer(folderName);
+    }
+
+    saveRecordingToServer = async (folderName) => {
+        const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        const formData = new FormData();
+        
+        formData.append('folder', folderName || 'general');
+        formData.append('video', blob);
+
+        try {
+            const response = await fetch(`${server_url}/api/upload-recording`, {
+                method: 'POST',
+                body: formData
+            });
+            await response.json();
+            message.success(`Запись успешно сохранена в папку: ${folderName || 'general'}`);
+        } catch (err) {
+            message.error("Ошибка при отправке записи на сервер");
+        }
+    }
+    // ------------------------------------
+
 	silence = () => {
 		let ctx = new AudioContext()
 		let oscillator = ctx.createOscillator()
@@ -367,6 +422,7 @@ class Video extends Component {
 		ctx.resume()
 		return Object.assign(dst.stream.getAudioTracks()[0], { enabled: false })
 	}
+
 	black = ({ width = 640, height = 480 } = {}) => {
 		let canvas = Object.assign(document.createElement("canvas"), { width, height })
 		canvas.getContext('2d').fillRect(0, 0, width, height)
@@ -390,7 +446,6 @@ class Video extends Component {
 	closeChat = () => this.setState({ showModal: false })
 	handleMessage = (e) => this.setState({ message: e.target.value })
     
-    // Выбор файла в Input
     handleFile = (e) => {
         if (e.target.files.length > 0) {
             this.setState({ file: e.target.files[0] })
@@ -406,7 +461,6 @@ class Video extends Component {
 		}
 	}
 
-    // Сохранение файла в чат
     addFileMessage = (data, sender, socketIdSender, isPrivate = false, fileName = "") => {
 		this.setState(prevState => ({
 			messages: [...prevState.messages, { "sender": sender, "data": data, "isPrivate": isPrivate, "isFile": true, "fileName": fileName }],
@@ -419,17 +473,15 @@ class Video extends Component {
 	handleUsername = (e) => this.setState({ username: e.target.value })
 
 	sendMessage = () => {
-        // Если выбран файл, конвертируем его и отправляем
         if (this.state.file) {
             const reader = new FileReader();
             reader.readAsDataURL(this.state.file);
             reader.onload = () => {
                 socket.emit('chat-file', reader.result, this.state.username, this.state.recipient, this.state.file.name);
-                this.setState({ file: null }); // очищаем после отправки
+                this.setState({ file: null });
             };
         }
 
-        // Если введен текст, отправляем текстовое сообщение
         if (this.state.message !== "") {
             socket.emit('chat-message', this.state.message, this.state.username, this.state.recipient)
 		    this.setState({ message: "", sender: this.state.username })
@@ -513,6 +565,11 @@ class Video extends Component {
 								</IconButton>
 								: null}
 
+                            <IconButton style={{ color: this.state.recording ? "red" : "#424242" }} 
+                                        onClick={this.state.recording ? this.stopRecording : this.startRecording}>
+                                {this.state.recording ? <StopIcon /> : <FiberManualRecordIcon />}
+                            </IconButton>
+
 							<Badge badgeContent={this.state.newmessages} max={999} color="secondary" onClick={this.openChat}>
 								<IconButton style={{ color: "#424242" }} onClick={this.openChat}>
 									<ChatIcon />
@@ -527,7 +584,6 @@ class Video extends Component {
 							<Modal.Body style={{ overflow: "auto", overflowY: "auto", height: "400px", textAlign: "left" }} >
 								{this.state.messages.length > 0 ? this.state.messages.map((item, index) => (
 									<div key={index} style={{textAlign: "left", marginBottom: "10px"}}>
-                                        {/* Если это файл, выводим ссылку на скачивание */}
                                         {item.isFile ? (
                                             <p style={{ wordBreak: "break-all", margin: 0 }}>
                                                 <b>{item.sender} {item.isPrivate ? <span style={{color: "red"}}>(Private)</span> : ""}</b>: 
@@ -545,7 +601,6 @@ class Video extends Component {
 								)) : <p>No message yet</p>}
 							</Modal.Body>
 							
-                            {/* Обновленный футер с кнопкой прикрепления файлов */}
                             <Modal.Footer style={{flexWrap: "nowrap", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
                                 <select 
                                     style={{ padding: "6px", borderRadius: "4px", border: "1px solid #ced4da", marginRight: "10px" }}
@@ -558,7 +613,6 @@ class Video extends Component {
                                     ))}
                                 </select>
 
-                                {/* Скрытый input для выбора файла */}
                                 <input type="file" id="file-upload" style={{display: 'none'}} onChange={this.handleFile} />
                                 <label htmlFor="file-upload" style={{margin: 0, display: "flex", alignItems: "center"}}>
                                     <IconButton color="primary" component="span" style={{ padding: "8px" }}>
@@ -566,7 +620,6 @@ class Video extends Component {
                                     </IconButton>
                                 </label>
 
-                                {/* Отображение имени выбранного файла перед отправкой */}
                                 {this.state.file ? <div style={{maxWidth: "70px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", marginRight: "5px"}}>{this.state.file.name}</div> : null}
 
 								<Input placeholder="Message" value={this.state.message} onChange={e => this.handleMessage(e)} style={{flexGrow: 1}} />
