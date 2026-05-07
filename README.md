@@ -6,12 +6,6 @@ Video Meeting is a video conference website that lets you stay in touch with all
 
 Developed with ReactJS, Node.js, SocketIO.
 
-![Website](https://i.imgur.com/HhZD01o.jpg)
-
-### Website
-Try Video Meeting here [video.sebastienbiollo.com](https://video.sebastienbiollo.com)
-
-
 ### Features
 - Is 100% free and open-source
 - No account needed
