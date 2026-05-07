@@ -11,6 +11,7 @@ import ScreenShareIcon from '@material-ui/icons/ScreenShare'
 import StopScreenShareIcon from '@material-ui/icons/StopScreenShare'
 import CallEndIcon from '@material-ui/icons/CallEnd'
 import ChatIcon from '@material-ui/icons/Chat'
+import AttachFileIcon from '@material-ui/icons/AttachFile' // Добавили иконку для файла
 
 import { message } from 'antd'
 import 'antd/dist/antd.css'
@@ -25,7 +26,6 @@ const server_url = process.env.NODE_ENV === 'production' ? 'https://video.sebast
 var connections = {}
 const peerConnectionConfig = {
 	'iceServers': [
-		// { 'urls': 'stun:stun.services.mozilla.com' },
 		{ 'urls': 'stun:stun.l.google.com:19302' },
 	]
 }
@@ -53,7 +53,8 @@ class Video extends Component {
 			newmessages: 0,
 			askForUsername: true,
 			username: faker.internet.userName(),
-            recipient: "All", // Добавлено состояние для выбора получателя
+            recipient: "All",
+            file: null, // Добавлено состояние для хранения выбранного файла
 		}
 		connections = {}
 
@@ -280,6 +281,7 @@ class Video extends Component {
 			socketId = socket.id
 
 			socket.on('chat-message', this.addMessage)
+            socket.on('chat-file', this.addFileMessage) // Подписка на файлы
 
 			socket.on('user-left', (id) => {
 				let video = document.querySelector(`[data-socket="${id}"]`)
@@ -295,18 +297,15 @@ class Video extends Component {
 			socket.on('user-joined', (id, clients) => {
 				clients.forEach((socketListId) => {
 					connections[socketListId] = new RTCPeerConnection(peerConnectionConfig)
-					// Wait for their ice candidate
 					connections[socketListId].onicecandidate = function (event) {
 						if (event.candidate != null) {
 							socket.emit('signal', socketListId, JSON.stringify({ 'ice': event.candidate }))
 						}
 					}
 
-					// Wait for their video stream
 					connections[socketListId].onaddstream = (event) => {
-						// TODO mute button, full screen button
 						var searchVidep = document.querySelector(`[data-socket="${socketListId}"]`)
-						if (searchVidep !== null) { // if i don't do this check it make an empyt square
+						if (searchVidep !== null) {
 							searchVidep.srcObject = event.stream
 						} else {
 							elms = clients.length
@@ -330,7 +329,6 @@ class Video extends Component {
 						}
 					}
 
-					// Add the local video stream
 					if (window.localStream !== undefined && window.localStream !== null) {
 						connections[socketListId].addStream(window.localStream)
 					} else {
@@ -391,11 +389,27 @@ class Video extends Component {
 	openChat = () => this.setState({ showModal: true, newmessages: 0 })
 	closeChat = () => this.setState({ showModal: false })
 	handleMessage = (e) => this.setState({ message: e.target.value })
+    
+    // Выбор файла в Input
+    handleFile = (e) => {
+        if (e.target.files.length > 0) {
+            this.setState({ file: e.target.files[0] })
+        }
+    }
 
-    // Добавлен isPrivate для отображения статуса сообщения
 	addMessage = (data, sender, socketIdSender, isPrivate = false) => {
 		this.setState(prevState => ({
-			messages: [...prevState.messages, { "sender": sender, "data": data, "isPrivate": isPrivate }],
+			messages: [...prevState.messages, { "sender": sender, "data": data, "isPrivate": isPrivate, "isFile": false }],
+		}))
+		if (socketIdSender !== socketId) {
+			this.setState({ newmessages: this.state.newmessages + 1 })
+		}
+	}
+
+    // Сохранение файла в чат
+    addFileMessage = (data, sender, socketIdSender, isPrivate = false, fileName = "") => {
+		this.setState(prevState => ({
+			messages: [...prevState.messages, { "sender": sender, "data": data, "isPrivate": isPrivate, "isFile": true, "fileName": fileName }],
 		}))
 		if (socketIdSender !== socketId) {
 			this.setState({ newmessages: this.state.newmessages + 1 })
@@ -405,9 +419,21 @@ class Video extends Component {
 	handleUsername = (e) => this.setState({ username: e.target.value })
 
 	sendMessage = () => {
-        // Передаем получателя (this.state.recipient) при отправке
-		socket.emit('chat-message', this.state.message, this.state.username, this.state.recipient)
-		this.setState({ message: "", sender: this.state.username })
+        // Если выбран файл, конвертируем его и отправляем
+        if (this.state.file) {
+            const reader = new FileReader();
+            reader.readAsDataURL(this.state.file);
+            reader.onload = () => {
+                socket.emit('chat-file', reader.result, this.state.username, this.state.recipient, this.state.file.name);
+                this.setState({ file: null }); // очищаем после отправки
+            };
+        }
+
+        // Если введен текст, отправляем текстовое сообщение
+        if (this.state.message !== "") {
+            socket.emit('chat-message', this.state.message, this.state.username, this.state.recipient)
+		    this.setState({ message: "", sender: this.state.username })
+        }
 	}
 
 	copyUrl = () => {
@@ -440,8 +466,6 @@ class Video extends Component {
 		let userAgent = (navigator && (navigator.userAgent || '')).toLowerCase()
 		let vendor = (navigator && (navigator.vendor || '')).toLowerCase()
 		let matchChrome = /google inc/.test(vendor) ? userAgent.match(/(?:chrome|crios)\/(\d+)/) : null
-		// let matchFirefox = userAgent.match(/(?:firefox|fxios)\/(\d+)/)
-		// return matchChrome !== null || matchFirefox !== null
 		return matchChrome !== null
 	}
 
@@ -502,15 +526,27 @@ class Video extends Component {
 							</Modal.Header>
 							<Modal.Body style={{ overflow: "auto", overflowY: "auto", height: "400px", textAlign: "left" }} >
 								{this.state.messages.length > 0 ? this.state.messages.map((item, index) => (
-									<div key={index} style={{textAlign: "left"}}>
-										<p style={{ wordBreak: "break-all" }}>
-                                            <b>{item.sender} {item.isPrivate ? <span style={{color: "red"}}>(Private)</span> : ""}</b>: {item.data}
-                                        </p>
+									<div key={index} style={{textAlign: "left", marginBottom: "10px"}}>
+                                        {/* Если это файл, выводим ссылку на скачивание */}
+                                        {item.isFile ? (
+                                            <p style={{ wordBreak: "break-all", margin: 0 }}>
+                                                <b>{item.sender} {item.isPrivate ? <span style={{color: "red"}}>(Private)</span> : ""}</b>: 
+                                                <br />
+                                                <a href={item.data} download={item.fileName} style={{color: "#3f51b5", textDecoration: "underline"}}>
+                                                    📁 Download {item.fileName}
+                                                </a>
+                                            </p>
+                                        ) : (
+                                            <p style={{ wordBreak: "break-all", margin: 0 }}>
+                                                <b>{item.sender} {item.isPrivate ? <span style={{color: "red"}}>(Private)</span> : ""}</b>: {item.data}
+                                            </p>
+                                        )}
 									</div>
 								)) : <p>No message yet</p>}
 							</Modal.Body>
-							<Modal.Footer className="div-send-msg">
-                                {/* Выпадающий список для выбора получателя */}
+							
+                            {/* Обновленный футер с кнопкой прикрепления файлов */}
+                            <Modal.Footer style={{flexWrap: "nowrap", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
                                 <select 
                                     style={{ padding: "6px", borderRadius: "4px", border: "1px solid #ced4da", marginRight: "10px" }}
                                     value={this.state.recipient} 
@@ -522,16 +558,26 @@ class Video extends Component {
                                     ))}
                                 </select>
 
-								<Input placeholder="Message" value={this.state.message} onChange={e => this.handleMessage(e)} />
-								<Button variant="contained" color="primary" onClick={this.sendMessage}>Send</Button>
+                                {/* Скрытый input для выбора файла */}
+                                <input type="file" id="file-upload" style={{display: 'none'}} onChange={this.handleFile} />
+                                <label htmlFor="file-upload" style={{margin: 0, display: "flex", alignItems: "center"}}>
+                                    <IconButton color="primary" component="span" style={{ padding: "8px" }}>
+                                        <AttachFileIcon />
+                                    </IconButton>
+                                </label>
+
+                                {/* Отображение имени выбранного файла перед отправкой */}
+                                {this.state.file ? <div style={{maxWidth: "70px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "12px", marginRight: "5px"}}>{this.state.file.name}</div> : null}
+
+								<Input placeholder="Message" value={this.state.message} onChange={e => this.handleMessage(e)} style={{flexGrow: 1}} />
+								<Button variant="contained" color="primary" onClick={this.sendMessage} style={{ marginLeft: "10px" }}>Send</Button>
 							</Modal.Footer>
 						</Modal>
 
 						<div className="container">
 							<div style={{ paddingTop: "20px" }}>
 								<Input value={window.location.href} disable="true"></Input>
-								<Button style={{
-									backgroundColor: "#3f51b5",color: "whitesmoke",marginLeft: "20px",
+								<Button style={{backgroundColor: "#3f51b5",color: "whitesmoke",marginLeft: "20px",
 									marginTop: "10px",width: "120px",fontSize: "10px"
 								}} onClick={this.copyUrl}>Copy invite link</Button>
 							</div>

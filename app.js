@@ -7,7 +7,8 @@ const path = require("path")
 var xss = require("xss")
 
 var server = http.createServer(app)
-var io = require('socket.io')(server)
+// Увеличиваем лимит размера сообщения до ~50 МБ для поддержки передачи файлов
+var io = require('socket.io')(server, { pingTimeout: 60000, maxHttpBufferSize: 5e7 })
 
 app.use(cors())
 app.use(bodyParser.json())
@@ -45,10 +46,12 @@ io.on('connection', (socket) => {
 		if(messages[path] !== undefined){
 			for(let a = 0; a < messages[path].length; ++a){
                 let msg = messages[path][a];
-                // Отправляем пользователю историю, только если это публичное сообщение, 
-                // или если он является отправителем/получателем этого приватного сообщения
                 if (!msg.to || msg.to === 'All' || msg.to === socket.id || msg['socket-id-sender'] === socket.id) {
-                    io.to(socket.id).emit("chat-message", msg.data, msg.sender, msg['socket-id-sender'], msg.isPrivate)
+                    if (msg.isFile) {
+                        io.to(socket.id).emit("chat-file", msg.data, msg.sender, msg['socket-id-sender'], msg.isPrivate, msg.fileName)
+                    } else {
+                        io.to(socket.id).emit("chat-message", msg.data, msg.sender, msg['socket-id-sender'], msg.isPrivate)
+                    }
                 }
 			}
 		}
@@ -60,7 +63,7 @@ io.on('connection', (socket) => {
 		io.to(toId).emit('signal', socket.id, message)
 	})
 
-	// Добавлен аргумент toSocketId для приватных сообщений
+	// Обработчик текстовых сообщений
 	socket.on('chat-message', (data, sender, toSocketId) => {
 		data = sanitizeString(data)
 		sender = sanitizeString(sender)
@@ -82,20 +85,56 @@ io.on('connection', (socket) => {
 			}
             
             let isPrivate = toSocketId && toSocketId !== 'All';
-			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate})
+			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate, "isFile": false})
 			console.log("message", key, ":", sender, data, "to:", toSocketId)
 
             if (isPrivate) {
-                // Отправляем личное сообщение получателю
                 io.to(toSocketId).emit("chat-message", data, sender, socket.id, true)
-                // И дублируем отправителю, чтобы он видел его в своем чате
                 if (toSocketId !== socket.id) {
                     io.to(socket.id).emit("chat-message", data, sender, socket.id, true)
                 }
             } else {
-                // Публичное сообщение (всем в комнате)
                 for(let a = 0; a < connections[key].length; ++a){
                     io.to(connections[key][a]).emit("chat-message", data, sender, socket.id, false)
+                }
+            }
+		}
+	})
+
+    // НОВЫЙ: Обработчик для отправки файлов
+    socket.on('chat-file', (data, sender, toSocketId, fileName) => {
+		sender = sanitizeString(sender)
+		fileName = sanitizeString(fileName)
+        // Строку Base64 'data' не санируем xss(), иначе испортится кодировка файла
+
+		var key
+		var ok = false
+		for (const [k, v] of Object.entries(connections)) {
+			for(let a = 0; a < v.length; ++a){
+				if(v[a] === socket.id){
+					key = k
+					ok = true
+				}
+			}
+		}
+
+		if(ok === true){
+			if(messages[key] === undefined){
+				messages[key] = []
+			}
+            
+            let isPrivate = toSocketId && toSocketId !== 'All';
+			messages[key].push({"sender": sender, "data": data, "socket-id-sender": socket.id, "to": toSocketId, "isPrivate": isPrivate, "isFile": true, "fileName": fileName})
+			console.log("file sent", key, ":", sender, fileName, "to:", toSocketId)
+
+            if (isPrivate) {
+                io.to(toSocketId).emit("chat-file", data, sender, socket.id, true, fileName)
+                if (toSocketId !== socket.id) {
+                    io.to(socket.id).emit("chat-file", data, sender, socket.id, true, fileName)
+                }
+            } else {
+                for(let a = 0; a < connections[key].length; ++a){
+                    io.to(connections[key][a]).emit("chat-file", data, sender, socket.id, false, fileName)
                 }
             }
 		}
