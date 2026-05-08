@@ -57,6 +57,7 @@ class Video extends Component {
             recipient: "All",
             file: null,
             recording: false,
+            inviteEmail: "",
 		}
 		connections = {}
         this.mediaRecorder = null;
@@ -465,6 +466,24 @@ class Video extends Component {
 
 	handleUsername = (e) => this.setState({ username: e.target.value })
 
+	handleInviteEmail = (e) => this.setState({ inviteEmail: e.target.value })
+
+	inviteByEmail = () => {
+        const rawEmails = this.state.inviteEmail.trim();
+        if (!rawEmails) {
+            message.info("Enter at least one email address to invite.");
+            return;
+        }
+
+        const recipients = rawEmails
+            .split(/[,;\s]+/)
+            .filter(Boolean)
+            .join(',');
+        const subject = encodeURIComponent('Join my Video Meeting');
+        const body = encodeURIComponent(`Please join the meeting: ${window.location.href}\n\nClick the link to join.`);
+        window.location.href = `mailto:${recipients}?subject=${subject}&body=${body}`;
+    }
+
 	sendMessage = () => {
         if (this.state.file) {
             const reader = new FileReader();
@@ -626,6 +645,17 @@ class Video extends Component {
 								<Button style={{backgroundColor: "#3f51b5",color: "whitesmoke",marginLeft: "20px",
 									marginTop: "10px",width: "120px",fontSize: "10px"
 								}} onClick={this.copyUrl}>Copy invite link</Button>
+						<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px", marginTop: "10px" }}>
+							<Input
+								placeholder="Enter email(s), comma separated"
+								value={this.state.inviteEmail}
+								onChange={this.handleInviteEmail}
+								style={{ minWidth: "300px" }}
+							/>
+							<Button variant="contained" color="secondary" onClick={this.inviteByEmail} style={{ marginTop: "0", width: "160px", fontSize: "10px" }}>
+								Invite by email
+							</Button>
+						</div>
 							</div>
 
 							<Row id="main" className="flex-container" style={{ margin: 0, padding: 0 }}>
