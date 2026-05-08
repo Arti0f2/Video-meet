@@ -360,7 +360,7 @@ class Video extends Component {
 		})
 	}
 
-    // --- ЛОГИКА ЗАПИСИ И ВЫБОРА ПАПКИ ---
+    // --- RECORDING LOGIC AND FOLDER SELECTION ---
     startRecording = () => {
         this.recordedChunks = [];
         const stream = window.localStream;
@@ -374,9 +374,9 @@ class Video extends Component {
             
             this.mediaRecorder.start();
             this.setState({ recording: true });
-            message.success("Запись началась!");
+            message.success("Recording started!");
         } catch (e) {
-            message.error("Ошибка при старте записи. Проверьте права.");
+            message.error("Error starting recording. Check permissions.");
         }
     }
 
@@ -384,13 +384,13 @@ class Video extends Component {
         this.mediaRecorder.stop();
         this.setState({ recording: false });
         
-        let folderName = window.prompt("Введите название папки для сохранения (оставьте пустым для сохранения в 'general'):", "general");
+        let folderName = window.prompt("Enter the folder name for saving (leave empty to save in 'general'):", "general");
         if (folderName === null) {
-            message.info("Сохранение отменено пользователем");
+            message.info("Saving canceled by user");
             return;
         }
 
-        message.loading("Сохранение записи на сервер...");
+        message.loading("Saving recording to server...");
         this.saveRecordingToServer(folderName);
     }
 
@@ -407,9 +407,9 @@ class Video extends Component {
                 body: formData
             });
             await response.json();
-            message.success(`Запись успешно сохранена в папку: ${folderName || 'general'}`);
+            message.success(`Recording successfully saved to folder: ${folderName || 'general'}`);
         } catch (err) {
-            message.error("Ошибка при отправке записи на сервер");
+            message.error("Error sending recording to server");
         }
     }
     // ------------------------------------

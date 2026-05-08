@@ -11,7 +11,7 @@ class Home extends Component {
 		this.state = {
 			url: '',
             meetings: [], 
-            recordings: [], // Архив записей с сервера
+            recordings: [], // Archive of recordings from the server
             newMeetingTitle: '', 
             newMeetingDate: '' 
 		}
@@ -22,18 +22,18 @@ class Home extends Component {
         this.fetchRecordings()
     }
 
-    // Загрузка запланированных встреч
+    // Loading scheduled meetings
     fetchMeetings = () => {
         fetch(`${server_url}/api/meetings`)
             .then(res => res.json())
             .then(data => {
-                // Сортируем от ближайших к самым дальним
+                // Sort from nearest to farthest
                 const sortedMeetings = data.sort((a, b) => new Date(a.date) - new Date(b.date));
                 this.setState({ meetings: sortedMeetings });
             }).catch(err => console.error(err))
     }
 
-    // Загрузка списка видеозаписей
+    // Loading the list of video recordings
     fetchRecordings = () => {
         fetch(`${server_url}/api/recordings`)
             .then(res => res.json())
@@ -43,7 +43,7 @@ class Home extends Component {
 
 	handleChange = (e) => this.setState({ url: e.target.value })
 
-    // Подключение к существующей или создание быстрой комнаты
+    // Connecting to existing or creating a quick room
 	join = () => {
 		if (this.state.url !== "") {
 			var url = this.state.url.split("/")
@@ -54,7 +54,7 @@ class Home extends Component {
 		}
 	}
 
-    // Создание новой запланированной встречи
+    // Creating a new scheduled meeting
     scheduleMeeting = () => {
         if (!this.state.newMeetingTitle || !this.state.newMeetingDate) {
             alert("Please enter a title and select a date/time."); 
@@ -74,7 +74,7 @@ class Home extends Component {
         })
         .then(res => res.json())
         .then(newMeeting => {
-            // Добавляем новую встречу в стейт и очищаем форму
+            // Add new meeting to state and clear form
             this.setState(prevState => ({
                 meetings: [...prevState.meetings, newMeeting].sort((a, b) => new Date(a.date) - new Date(b.date)),
                 newMeetingTitle: '', 
@@ -86,22 +86,16 @@ class Home extends Component {
 	render() {
 		return (
 			<div className="container2">
-				<div style={{fontSize: "14px", background: "white", width: "10%", minWidth: "150px", textAlign: "center", margin: "auto", marginBottom: "10px"}}>
-					Source code: 
-					<IconButton style={{color: "black"}} onClick={() => window.location.href="https://github.com/0x5eba/Video-Meeting"}>
-						<GitHubIcon />
-					</IconButton>
-				</div>
-				
+			
 				<div>
 					<h1 style={{ fontSize: "45px" }}>Video Meeting</h1>
 					<p style={{ fontWeight: "200" }}>Video conference website that lets you stay in touch with all your friends.</p>
 				</div>
 
-                {/* --- ВЕРХНИЙ БЛОК: Вход и Планирование --- */}
+                {/* --- TOP BLOCK: Entry and Scheduling --- */}
                 <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", marginTop: "40px" }}>
                     
-                    {/* Быстрый вход */}
+                    {/* Quick entry */}
                     <div style={{ background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "350px", textAlign: "center", margin: "10px", borderRadius: "8px", boxShadow: "0px 4px 10px rgba(0,0,0,0.1)" }}>
                         <p style={{ margin: 0, fontWeight: "bold", fontSize: "18px", marginBottom: "15px" }}>Start or join a meeting</p>
                         <Input placeholder="Enter URL or ID" onChange={e => this.handleChange(e)} style={{width: "80%"}} />
@@ -109,7 +103,7 @@ class Home extends Component {
                         <Button variant="contained" color="primary" onClick={this.join} style={{ margin: "20px" }}>Go / Create Instant</Button>
                     </div>
 
-                    {/* Планировщик */}
+                    {/* Scheduler */}
                     <div style={{ background: "white", width: "30%", height: "auto", padding: "20px", minWidth: "350px", textAlign: "center", margin: "10px", borderRadius: "8px", boxShadow: "0px 4px 10px rgba(0,0,0,0.1)" }}>
                         <p style={{ margin: 0, fontWeight: "bold", fontSize: "18px", marginBottom: "15px" }}>Schedule a Meeting</p>
                         <Input 
@@ -129,7 +123,7 @@ class Home extends Component {
                     </div>
                 </div>
 
-                {/* --- СРЕДНИЙ БЛОК: Список предстоящих встреч --- */}
+                {/* --- MIDDLE BLOCK: List of upcoming meetings --- */}
                 <div style={{ background: "white", width: "62%", minWidth: "350px", margin: "20px auto", padding: "30px", textAlign: "left", borderRadius: "8px", boxShadow: "0px 4px 10px rgba(0,0,0,0.1)" }}>
                     <p style={{ fontWeight: "bold", fontSize: "22px", borderBottom: "2px solid #f0f0f0", paddingBottom: "10px" }}>Upcoming Meetings</p>
                     {this.state.meetings.length === 0 ? <p style={{ color: "gray", textAlign: "center", padding: "20px" }}>No meetings scheduled yet.</p> : (
@@ -147,23 +141,23 @@ class Home extends Component {
                     )}
                 </div>
 
-                {/* --- НИЖНИЙ БЛОК: Архив записей по папкам --- */}
+                {/* --- BOTTOM BLOCK: Recordings archive by folders --- */}
                 <div style={{ background: "white", width: "62%", minWidth: "350px", margin: "20px auto", padding: "30px", textAlign: "left", borderRadius: "8px", boxShadow: "0px 4px 10px rgba(0,0,0,0.1)" }}>
-                    <p style={{ fontWeight: "bold", fontSize: "22px", borderBottom: "2px solid #f0f0f0", paddingBottom: "10px" }}>Архив записей (на сервере)</p>
-                    {this.state.recordings.length === 0 ? <p style={{ color: "gray", textAlign: "center", padding: "20px" }}>Записей пока нет</p> : (
+                    <p style={{ fontWeight: "bold", fontSize: "22px", borderBottom: "2px solid #f0f0f0", paddingBottom: "10px" }}>Recordings Archive (on server)</p>
+                    {this.state.recordings.length === 0 ? <p style={{ color: "gray", textAlign: "center", padding: "20px" }}>No recordings yet</p> : (
                         <ul style={{ listStyle: "none", padding: 0 }}>
                             {this.state.recordings.map((rec, index) => (
                                 <li key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "15px 0", borderBottom: "1px solid #eee" }}>
                                     <div>
-                                        {/* Бейджик с названием папки */}
+                                        {/* Badge with folder name */}
                                         <span style={{ backgroundColor: "#e0f7fa", color: "#006064", padding: "4px 8px", borderRadius: "4px", fontSize: "12px", marginRight: "10px", fontWeight: "bold" }}>
                                             📁 {rec.folder}
                                         </span>
-                                        <span style={{fontSize: "16px"}}>🎥 Запись от {rec.date}</span>
+                                        <span style={{fontSize: "16px"}}>🎥 Recording from {rec.date}</span>
                                     </div>
-                                    {/* Кнопка для просмотра видео */}
+                                    {/* Button to view video */}
                                     <Button variant="contained" style={{backgroundColor: "#4caf50", color: "white"}} onClick={() => window.open(`${server_url}${rec.url}`)}>
-                                        Смотреть
+                                        Watch
                                     </Button>
                                 </li>
                             ))}

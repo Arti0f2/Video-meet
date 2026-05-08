@@ -9,19 +9,19 @@ const fs = require('fs')
 const multer = require('multer')
 
 var server = http.createServer(app)
-// Увеличен лимит размера сообщения до ~50 МБ для поддержки передачи файлов в чате
+// Increased message size limit to ~50 MB to support file transfers in chat
 var io = require('socket.io')(server, { pingTimeout: 60000, maxHttpBufferSize: 5e7 })
 
-// --- НАСТРОЙКА ХРАНИЛИЩА ЗАПИСЕЙ (MULTER) ---
+// --- RECORDINGS STORAGE SETUP (MULTER) ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Получаем имя папки из текстового поля (по умолчанию 'general')
-        // Очищаем от спецсимволов для безопасности файловой системы
+        // Get folder name from text field (default 'general')
+        // Clean from special characters for file system security
         let folderName = req.body.folder ? req.body.folder.replace(/[^a-zA-Z0-9а-яА-Я_\-\s]/g, '_') : 'general';
         if (!folderName.trim()) folderName = 'general';
 
         const dir = path.join(__dirname, 'recordings', folderName);
-        // Создаем папку, если её нет (recursive: true позволяет создавать вложенные папки)
+        // Create folder if it doesn't exist (recursive: true allows creating nested folders)
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -36,7 +36,7 @@ const upload = multer({ storage: storage });
 
 app.use(cors())
 app.use(bodyParser.json())
-// Раздаем всю папку recordings как статику, чтобы видео можно было смотреть по ссылке
+// Serve the entire recordings folder as static so videos can be viewed via link
 app.use('/recordings', express.static(path.join(__dirname, 'recordings'))) 
 
 if(process.env.NODE_ENV === 'production'){
@@ -47,9 +47,9 @@ if(process.env.NODE_ENV === 'production'){
 }
 app.set('port', (process.env.PORT || 4001))
 
-// --- API ДЛЯ ПЛАНИРОВАНИЯ ВСТРЕЧ (JSON-БД) ---
+// --- MEETINGS SCHEDULING API (JSON-DB) ---
 const meetingsFilePath = path.join(__dirname, 'meetings.json')
-// Создаем файл для встреч, если его еще нет
+// Create meetings file if it doesn't exist yet
 if (!fs.existsSync(meetingsFilePath)) {
     fs.writeFileSync(meetingsFilePath, JSON.stringify([]))
 }
@@ -84,13 +84,13 @@ app.post('/api/meetings', (req, res) => {
     }
 })
 
-// --- API ДЛЯ ЗАПИСЕЙ ---
-// Сохранение новой записи
+// --- RECORDINGS API ---
+// Saving a new recording
 app.post('/api/upload-recording', upload.single('video'), (req, res) => {
-    res.json({ message: 'Запись успешно сохранена', file: req.file.filename });
+    res.json({ message: 'Recording successfully saved', file: req.file.filename });
 });
 
-// Получение списка всех записей (сканирование подпапок)
+// Getting the list of all recordings (scanning subfolders)
 app.get('/api/recordings', (req, res) => {
     const baseDir = path.join(__dirname, 'recordings');
     if (!fs.existsSync(baseDir)) return res.json([]);
@@ -101,7 +101,7 @@ app.get('/api/recordings', (req, res) => {
     items.forEach(item => {
         const itemPath = path.join(baseDir, item);
         
-        // Если это папка, заходим внутрь
+        // If it's a folder, go inside
         if (fs.statSync(itemPath).isDirectory()) {
             const files = fs.readdirSync(itemPath);
             files.forEach(file => {
@@ -115,7 +115,7 @@ app.get('/api/recordings', (req, res) => {
                 }
             });
         } 
-        // Обратная совместимость: если файлы лежат прямо в корне recordings
+        // Backward compatibility: if files are located directly in the recordings root
         else if (item.endsWith('.webm')) {
             allFiles.push({
                 folder: 'general',
