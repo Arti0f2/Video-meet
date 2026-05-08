@@ -15,13 +15,8 @@ var io = require('socket.io')(server, { pingTimeout: 60000, maxHttpBufferSize: 5
 // --- RECORDINGS STORAGE SETUP (MULTER) ---
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Get folder name from text field (default 'general')
-        // Clean from special characters for file system security
-        let folderName = req.body.folder ? req.body.folder.replace(/[^a-zA-Z0-9а-яА-Я_\-\s]/g, '_') : 'general';
-        if (!folderName.trim()) folderName = 'general';
-
-        const dir = path.join(__dirname, 'recordings', folderName);
-        // Create folder if it doesn't exist (recursive: true allows creating nested folders)
+        const dir = path.join(__dirname, 'recordings');
+        // Create recordings folder if it doesn't exist
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -90,41 +85,18 @@ app.post('/api/upload-recording', upload.single('video'), (req, res) => {
     res.json({ message: 'Recording successfully saved', file: req.file.filename });
 });
 
-// Getting the list of all recordings (scanning subfolders)
+// Getting the list of all recordings
 app.get('/api/recordings', (req, res) => {
     const baseDir = path.join(__dirname, 'recordings');
     if (!fs.existsSync(baseDir)) return res.json([]);
 
-    let allFiles = [];
-    const items = fs.readdirSync(baseDir);
-
-    items.forEach(item => {
-        const itemPath = path.join(baseDir, item);
-        
-        // If it's a folder, go inside
-        if (fs.statSync(itemPath).isDirectory()) {
-            const files = fs.readdirSync(itemPath);
-            files.forEach(file => {
-                if (file.endsWith('.webm')) {
-                    allFiles.push({
-                        folder: item,
-                        name: file,
-                        url: `/recordings/${item}/${file}`,
-                        date: new Date(parseInt(file.split('-')[1])).toLocaleString()
-                    });
-                }
-            });
-        } 
-        // Backward compatibility: if files are located directly in the recordings root
-        else if (item.endsWith('.webm')) {
-            allFiles.push({
-                folder: 'general',
-                name: item,
-                url: `/recordings/${item}`,
-                date: new Date(parseInt(item.split('-')[1])).toLocaleString()
-            });
-        }
-    });
+    const files = fs.readdirSync(baseDir).filter(file => file.endsWith('.webm'));
+    const allFiles = files.map(file => ({
+        folder: 'recordings',
+        name: file,
+        url: `/recordings/${file}`,
+        date: new Date(parseInt(file.split('-')[1])).toLocaleString()
+    }));
 
     res.json(allFiles);
 });

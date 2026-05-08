@@ -384,21 +384,14 @@ class Video extends Component {
         this.mediaRecorder.stop();
         this.setState({ recording: false });
         
-        let folderName = window.prompt("Enter the folder name for saving (leave empty to save in 'general'):", "general");
-        if (folderName === null) {
-            message.info("Saving canceled by user");
-            return;
-        }
-
         message.loading("Saving recording to server...");
-        this.saveRecordingToServer(folderName);
+        this.saveRecordingToServer();
     }
 
-    saveRecordingToServer = async (folderName) => {
+    saveRecordingToServer = async () => {
         const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
         const formData = new FormData();
         
-        formData.append('folder', folderName || 'general');
         formData.append('video', blob);
 
         try {
@@ -407,7 +400,7 @@ class Video extends Component {
                 body: formData
             });
             await response.json();
-            message.success(`Recording successfully saved to folder: ${folderName || 'general'}`);
+            message.success("Recording successfully saved!");
         } catch (err) {
             message.error("Error sending recording to server");
         }

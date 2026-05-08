@@ -143,16 +143,12 @@ class Home extends Component {
 
                 {/* --- BOTTOM BLOCK: Recordings archive by folders --- */}
                 <div style={{ background: "white", width: "62%", minWidth: "350px", margin: "20px auto", padding: "30px", textAlign: "left", borderRadius: "8px", boxShadow: "0px 4px 10px rgba(0,0,0,0.1)" }}>
-                    <p style={{ fontWeight: "bold", fontSize: "22px", borderBottom: "2px solid #f0f0f0", paddingBottom: "10px" }}>Recordings Archive (on server)</p>
+                    <p style={{ fontWeight: "bold", fontSize: "22px", borderBottom: "2px solid #f0f0f0", paddingBottom: "10px" }}>Recordings Archive</p>
                     {this.state.recordings.length === 0 ? <p style={{ color: "gray", textAlign: "center", padding: "20px" }}>No recordings yet</p> : (
                         <ul style={{ listStyle: "none", padding: 0 }}>
                             {this.state.recordings.map((rec, index) => (
                                 <li key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "15px 0", borderBottom: "1px solid #eee" }}>
                                     <div>
-                                        {/* Badge with folder name */}
-                                        <span style={{ backgroundColor: "#e0f7fa", color: "#006064", padding: "4px 8px", borderRadius: "4px", fontSize: "12px", marginRight: "10px", fontWeight: "bold" }}>
-                                            📁 {rec.folder}
-                                        </span>
                                         <span style={{fontSize: "16px"}}>🎥 Recording from {rec.date}</span>
                                     </div>
                                     {/* Button to view video */}
