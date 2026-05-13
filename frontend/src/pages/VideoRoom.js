@@ -181,6 +181,65 @@ class VideoRoom extends Component {
 		}
 	};
 
+	getDislayMedia = () => {
+		if (this.state.screen) {
+			if (navigator.mediaDevices.getDisplayMedia) {
+				navigator.mediaDevices
+					.getDisplayMedia({ video: true, audio: true })
+					.then(this.getDislayMediaSuccess)
+					.catch((e) => console.log(e));
+			}
+		}
+	};
+
+	getDislayMediaSuccess = (stream) => {
+		try {
+			if (window.localStream) {
+				window.localStream.getTracks().forEach((track) => track.stop());
+			}
+		} catch (e) {
+			console.log(e);
+		}
+
+		window.localStream = stream;
+
+		if (this.localVideoref.current) {
+			this.localVideoref.current.srcObject = stream;
+		}
+
+		if (socketId) {
+			const container = document.querySelector(
+				`[data-container="${socketId}"]`,
+			);
+			if (container) {
+				const video = container.querySelector("video");
+				if (video) video.srcObject = stream;
+			}
+		}
+
+		for (let id in connections) {
+			if (id === socketId) continue;
+			connections[id].addStream(window.localStream);
+			connections[id].createOffer().then((description) => {
+				connections[id].setLocalDescription(description).then(() => {
+					socket.emit(
+						"signal",
+						id,
+						JSON.stringify({ sdp: connections[id].localDescription }),
+					);
+				});
+			});
+		}
+
+		stream.getTracks().forEach((track) => {
+			track.onended = () => {
+				this.setState({ screen: false }, () => {
+					this.getUserMedia();
+				});
+			};
+		});
+	};
+
 	gotMessageFromServer = (fromId, message) => {
 		var signal = JSON.parse(message);
 		if (fromId !== socketId) {
