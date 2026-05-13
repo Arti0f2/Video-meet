@@ -460,35 +460,61 @@ class VideoRoom extends Component {
 		this.recordedChunks = [];
 		const stream = window.localStream;
 
+		if (!stream) {
+			message.error("No stream available to record.");
+			return;
+		}
+
+		let options = { mimeType: "video/webm;codecs=vp9" };
+		if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+			options = { mimeType: "video/webm;codecs=vp8" };
+			if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+				options = { mimeType: "video/webm" };
+				if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+					options = { mimeType: "" };
+				}
+			}
+		}
+
 		try {
-			this.mediaRecorder = new MediaRecorder(stream, {
-				mimeType: "video/webm;codecs=vp9",
-			});
+			this.mediaRecorder = new MediaRecorder(stream, options);
 
 			this.mediaRecorder.ondataavailable = (e) => {
-				if (e.data.size > 0) this.recordedChunks.push(e.data);
+				if (e.data.size > 0) {
+					this.recordedChunks.push(e.data);
+				}
 			};
 
-			this.mediaRecorder.start();
+			this.mediaRecorder.onstop = () => {
+				this.saveRecordingToServer();
+			};
+
+			// Start recording with a timeslice to ensure data is collected periodically
+			this.mediaRecorder.start(1000);
 			this.setState({ recording: true });
 			message.success("Recording started!");
 		} catch (e) {
+			console.error("MediaRecorder error:", e);
 			message.error("Error starting recording. Check permissions.");
 		}
 	};
 
 	stopRecording = () => {
-		this.mediaRecorder.stop();
-		this.setState({ recording: false });
-
-		message.loading("Saving recording to server...");
-		this.saveRecordingToServer();
+		if (this.mediaRecorder && this.state.recording) {
+			this.mediaRecorder.stop();
+			this.setState({ recording: false });
+			message.loading("Saving recording to server...");
+		}
 	};
 
 	saveRecordingToServer = async () => {
+		if (this.recordedChunks.length === 0) {
+			message.error("No recording data captured.");
+			return;
+		}
+
 		const blob = new Blob(this.recordedChunks, { type: "video/webm" });
 		const formData = new FormData();
-
 		formData.append("video", blob);
 
 		try {
@@ -496,9 +522,14 @@ class VideoRoom extends Component {
 				method: "POST",
 				body: formData,
 			});
-			await response.json();
-			message.success("Recording successfully saved!");
+			const result = await response.json();
+			if (response.ok) {
+				message.success("Recording successfully saved!");
+			} else {
+				throw new Error(result.message || "Upload failed");
+			}
 		} catch (err) {
+			console.error("Upload error:", err);
 			message.error("Error sending recording to server");
 		}
 	};

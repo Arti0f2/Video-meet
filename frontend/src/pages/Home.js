@@ -20,6 +20,8 @@ class Home extends Component {
 			editingMeetingId: null,
 			editTitle: "",
 			editDate: "",
+			editingRecordingName: null,
+			editRecordingName: "",
 		};
 	}
 
@@ -107,6 +109,73 @@ class Home extends Component {
 				if (data.success) {
 					this.setState((prevState) => ({
 						meetings: prevState.meetings.filter((m) => m.id !== id),
+					}));
+				}
+			})
+			.catch((err) => console.error(err));
+	};
+
+	// --- RECORDING ACTIONS ---
+	deleteRecording = (name) => {
+		if (!window.confirm("Are you sure you want to delete this recording?"))
+			return;
+
+		fetch(`${server_url}/api/recordings/${name}`, {
+			method: "DELETE",
+		})
+			.then((res) => res.json())
+			.then((data) => {
+				if (data.success) {
+					this.setState((prevState) => ({
+						recordings: prevState.recordings.filter((r) => r.name !== name),
+					}));
+				}
+			})
+			.catch((err) => console.error(err));
+	};
+
+	startEditRecording = (recording) => {
+		this.setState({
+			editingRecordingName: recording.name,
+			editRecordingName: recording.name.replace(".webm", ""),
+		});
+	};
+
+	cancelEditRecording = () => {
+		this.setState({
+			editingRecordingName: null,
+			editRecordingName: "",
+		});
+	};
+
+	saveEditRecording = () => {
+		const { editingRecordingName, editRecordingName } = this.state;
+		if (!editRecordingName) {
+			alert("Name cannot be empty.");
+			return;
+		}
+
+		fetch(`${server_url}/api/recordings/rename`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				oldName: editingRecordingName,
+				newName: editRecordingName,
+			}),
+		})
+			.then((res) => res.json())
+			.then((data) => {
+				if (data.error) {
+					alert(data.error);
+				} else {
+					this.setState((prevState) => ({
+						recordings: prevState.recordings.map((r) =>
+							r.name === editingRecordingName
+								? { ...r, name: data.name, url: data.url }
+								: r,
+						),
+						editingRecordingName: null,
+						editRecordingName: "",
 					}));
 				}
 			})
@@ -449,22 +518,72 @@ class Home extends Component {
 										borderBottom: "1px solid #eee",
 									}}
 								>
-									<div>
-										<span style={{ fontSize: "16px" }}>
-											<span role="img" aria-label="camera">
-												🎥
-											</span>{" "}
-											Recording from {rec.date}
-										</span>
-									</div>
-									{/* Button to view video */}
-									<Button
-										variant="contained"
-										style={{ backgroundColor: "#4caf50", color: "white" }}
-										onClick={() => window.open(`${server_url}${rec.url}`)}
-									>
-										Watch
-									</Button>
+									{this.state.editingRecordingName === rec.name ? (
+										/* EDIT RECORDING NAME */
+										<div
+											style={{ flex: 1, display: "flex", alignItems: "center" }}
+										>
+											<Input
+												value={this.state.editRecordingName}
+												onChange={(e) =>
+													this.setState({ editRecordingName: e.target.value })
+												}
+												style={{ marginRight: "10px", flex: 1 }}
+											/>
+											<IconButton
+												color="primary"
+												onClick={this.saveEditRecording}
+											>
+												<Save />
+											</IconButton>
+											<IconButton
+												color="secondary"
+												onClick={this.cancelEditRecording}
+											>
+												<Cancel />
+											</IconButton>
+										</div>
+									) : (
+										/* VIEW RECORDING */
+										<>
+											<div>
+												<span style={{ fontSize: "16px" }}>
+													<span role="img" aria-label="camera">
+														🎥
+													</span>{" "}
+													<b>{rec.name.replace(".webm", "")}</b>
+													<br />
+													<small style={{ color: "gray" }}>{rec.date}</small>
+												</span>
+											</div>
+											<div>
+												<IconButton
+													onClick={() => this.startEditRecording(rec)}
+													title="Rename Recording"
+												>
+													<Edit />
+												</IconButton>
+												<IconButton
+													color="secondary"
+													onClick={() => this.deleteRecording(rec.name)}
+													title="Delete Recording"
+												>
+													<Delete />
+												</IconButton>
+												<Button
+													variant="contained"
+													style={{
+														backgroundColor: "#4caf50",
+														color: "white",
+														marginLeft: "10px",
+													}}
+													onClick={() => window.open(`${server_url}${rec.url}`)}
+												>
+													Watch
+												</Button>
+											</div>
+										</>
+									)}
 								</li>
 							))}
 						</ul>

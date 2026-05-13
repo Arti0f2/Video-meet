@@ -24,8 +24,39 @@ class RecordingService {
 			folder: "recordings",
 			name: file,
 			url: `/recordings/${file}`,
-			date: new Date(parseInt(file.split("-")[1])).toLocaleString(),
+			date: this.getDateFromFilename(file),
 		}));
+	}
+
+	getDateFromFilename(filename) {
+		const parts = filename.split("-");
+		if (parts.length < 2) return "Unknown date";
+		const timestamp = parseInt(parts[1]);
+		return isNaN(timestamp)
+			? "Unknown date"
+			: new Date(timestamp).toLocaleString();
+	}
+
+	rename(oldName, newName) {
+		const oldPath = path.join(this.baseDir, oldName);
+		// Ensure new name ends with .webm
+		if (!newName.endsWith(".webm")) newName += ".webm";
+		const newPath = path.join(this.baseDir, newName);
+
+		if (!fs.existsSync(oldPath)) throw new Error("File not found");
+		if (fs.existsSync(newPath))
+			throw new Error("File with this name already exists");
+
+		fs.renameSync(oldPath, newPath);
+		return { name: newName, url: `/recordings/${newName}` };
+	}
+
+	delete(name) {
+		const filePath = path.join(this.baseDir, name);
+		if (!fs.existsSync(filePath)) throw new Error("File not found");
+
+		fs.unlinkSync(filePath);
+		return true;
 	}
 }
 

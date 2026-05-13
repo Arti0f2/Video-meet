@@ -47,6 +47,8 @@ app.post(
 	upload.single("video"),
 	RecordingController.uploadRecording,
 );
+app.put("/api/recordings/rename", RecordingController.renameRecording);
+app.delete("/api/recordings/:name", RecordingController.deleteRecording);
 
 // Fallback for React Router in production
 if (process.env.NODE_ENV === "production") {
