@@ -1,5 +1,6 @@
 import React, { Component } from "react";
-import { Input, Button, TextField } from "@material-ui/core";
+import { Input, Button, TextField, IconButton } from "@material-ui/core";
+import { Delete, Edit, Email, Save, Cancel } from "@material-ui/icons";
 import "./Home.css";
 
 const server_url =
@@ -16,6 +17,9 @@ class Home extends Component {
 			recordings: [], // Archive of recordings from the server
 			newMeetingTitle: "",
 			newMeetingDate: "",
+			editingMeetingId: null,
+			editTitle: "",
+			editDate: "",
 		};
 	}
 
@@ -89,6 +93,80 @@ class Home extends Component {
 				}));
 			})
 			.catch((err) => console.error(err));
+	};
+
+	deleteMeeting = (id) => {
+		if (!window.confirm("Are you sure you want to delete this meeting?"))
+			return;
+
+		fetch(`${server_url}/api/meetings/${id}`, {
+			method: "DELETE",
+		})
+			.then((res) => res.json())
+			.then((data) => {
+				if (data.success) {
+					this.setState((prevState) => ({
+						meetings: prevState.meetings.filter((m) => m.id !== id),
+					}));
+				}
+			})
+			.catch((err) => console.error(err));
+	};
+
+	startEdit = (meeting) => {
+		this.setState({
+			editingMeetingId: meeting.id,
+			editTitle: meeting.title,
+			editDate: meeting.date,
+		});
+	};
+
+	cancelEdit = () => {
+		this.setState({
+			editingMeetingId: null,
+			editTitle: "",
+			editDate: "",
+		});
+	};
+
+	saveEdit = () => {
+		const { editingMeetingId, editTitle, editDate } = this.state;
+		if (!editTitle || !editDate) {
+			alert("Title and date cannot be empty.");
+			return;
+		}
+
+		fetch(`${server_url}/api/meetings/${editingMeetingId}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ title: editTitle, date: editDate }),
+		})
+			.then((res) => res.json())
+			.then((updatedMeeting) => {
+				this.setState((prevState) => ({
+					meetings: prevState.meetings
+						.map((m) => (m.id === editingMeetingId ? updatedMeeting : m))
+						.sort((a, b) => new Date(a.date) - new Date(b.date)),
+					editingMeetingId: null,
+					editTitle: "",
+					editDate: "",
+				}));
+			})
+			.catch((err) => console.error(err));
+	};
+
+	inviteByEmail = (meeting) => {
+		const subject = encodeURIComponent(
+			`Invitation to meeting: ${meeting.title}`,
+		);
+		const meetingFullUrl = `${window.location.origin}/${meeting.url}`;
+		const body = encodeURIComponent(
+			`Hi!\n\nYou're invited to a video meeting.\n\nMeeting: ${
+				meeting.title
+			}\nWhen: ${new Date(meeting.date).toLocaleString()}\nLink: ${meetingFullUrl}\n\nSee you there!`,
+		);
+
+		window.location.href = `mailto:?subject=${subject}&body=${body}`;
 	};
 
 	render() {
@@ -242,31 +320,89 @@ class Home extends Component {
 										alignItems: "center",
 									}}
 								>
-									<div>
-										<b style={{ fontSize: "18px" }}>{meeting.title}</b> <br />
-										<span
-											style={{
-												color: "#3f51b5",
-												fontSize: "14px",
-												fontWeight: "500",
-											}}
+									{this.state.editingMeetingId === meeting.id ? (
+										/* EDIT MODE */
+										<div
+											style={{ flex: 1, display: "flex", alignItems: "center" }}
 										>
-											<span role="img" aria-label="calendar">
-												📅
-											</span>{" "}
-											{new Date(meeting.date).toLocaleString([], {
-												dateStyle: "long",
-												timeStyle: "short",
-											})}
-										</span>
-									</div>
-									<Button
-										variant="outlined"
-										color="primary"
-										onClick={() => (window.location.href = `/${meeting.url}`)}
-									>
-										Join Room
-									</Button>
+											<Input
+												value={this.state.editTitle}
+												onChange={(e) =>
+													this.setState({ editTitle: e.target.value })
+												}
+												style={{ marginRight: "10px", flex: 2 }}
+											/>
+											<TextField
+												type="datetime-local"
+												value={this.state.editDate}
+												onChange={(e) =>
+													this.setState({ editDate: e.target.value })
+												}
+												style={{ marginRight: "10px", flex: 1 }}
+											/>
+											<IconButton color="primary" onClick={this.saveEdit}>
+												<Save />
+											</IconButton>
+											<IconButton color="secondary" onClick={this.cancelEdit}>
+												<Cancel />
+											</IconButton>
+										</div>
+									) : (
+										/* VIEW MODE */
+										<>
+											<div>
+												<b style={{ fontSize: "18px" }}>{meeting.title}</b>{" "}
+												<br />
+												<span
+													style={{
+														color: "#3f51b5",
+														fontSize: "14px",
+														fontWeight: "500",
+													}}
+												>
+													<span role="img" aria-label="calendar">
+														📅
+													</span>{" "}
+													{new Date(meeting.date).toLocaleString([], {
+														dateStyle: "long",
+														timeStyle: "short",
+													})}
+												</span>
+											</div>
+											<div>
+												<IconButton
+													color="primary"
+													onClick={() => this.inviteByEmail(meeting)}
+													title="Invite by Email"
+												>
+													<Email />
+												</IconButton>
+												<IconButton
+													onClick={() => this.startEdit(meeting)}
+													title="Edit Meeting"
+												>
+													<Edit />
+												</IconButton>
+												<IconButton
+													color="secondary"
+													onClick={() => this.deleteMeeting(meeting.id)}
+													title="Delete Meeting"
+												>
+													<Delete />
+												</IconButton>
+												<Button
+													variant="outlined"
+													color="primary"
+													onClick={() =>
+														(window.location.href = `/${meeting.url}`)
+													}
+													style={{ marginLeft: "10px" }}
+												>
+													Join Room
+												</Button>
+											</div>
+										</>
+									)}
 								</li>
 							))}
 						</ul>

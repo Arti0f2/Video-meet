@@ -42,6 +42,31 @@ class MeetingService {
 		fs.writeFileSync(this.filePath, JSON.stringify(meetings, null, 2));
 		return newMeeting;
 	}
+
+	update(id, meetingData) {
+		const meetings = this.getAll();
+		const index = meetings.findIndex((m) => m.id === id);
+		if (index === -1) throw new Error("Meeting not found");
+
+		meetings[index] = {
+			...meetings[index],
+			title: xss(meetingData.title) || meetings[index].title,
+			date: xss(meetingData.date) || meetings[index].date,
+		};
+
+		fs.writeFileSync(this.filePath, JSON.stringify(meetings, null, 2));
+		return meetings[index];
+	}
+
+	delete(id) {
+		const meetings = this.getAll();
+		const filtered = meetings.filter((m) => m.id !== id);
+		if (meetings.length === filtered.length)
+			throw new Error("Meeting not found");
+
+		fs.writeFileSync(this.filePath, JSON.stringify(filtered, null, 2));
+		return true;
+	}
 }
 
 module.exports = new MeetingService();

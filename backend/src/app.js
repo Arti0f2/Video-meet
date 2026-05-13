@@ -38,6 +38,8 @@ if (process.env.NODE_ENV === "production") {
 // --- API ROUTES ---
 app.get("/api/meetings", MeetingController.getAllMeetings);
 app.post("/api/meetings", MeetingController.createMeeting);
+app.put("/api/meetings/:id", MeetingController.updateMeeting);
+app.delete("/api/meetings/:id", MeetingController.deleteMeeting);
 
 app.get("/api/recordings", RecordingController.getAllRecordings);
 app.post(
