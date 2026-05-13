@@ -1,4 +1,5 @@
 const express = require("express");
+const https = require("https");
 const http = require("http");
 var cors = require("cors");
 const app = express();
@@ -8,7 +9,12 @@ var xss = require("xss");
 const fs = require("fs");
 const multer = require("multer");
 
-var server = http.createServer(app);
+const options = {
+	key: fs.readFileSync("key.pem"),
+	cert: fs.readFileSync("cert.pem"),
+};
+
+var server = https.createServer(options, app);
 // Increased message size limit to ~50 MB to support file transfers in chat
 var io = require("socket.io")(server, {
 	pingTimeout: 60000,

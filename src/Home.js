@@ -6,7 +6,7 @@ import "./Home.css";
 const server_url =
 	process.env.NODE_ENV === "production"
 		? "https://video.sebastienbiollo.com"
-		: "http://localhost:4001";
+		: `${window.location.protocol}//${window.location.hostname}:4001`;
 
 class Home extends Component {
 	constructor(props) {

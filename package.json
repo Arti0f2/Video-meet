@@ -34,7 +34,7 @@
 		"xss": "^1.0.8"
 	},
 	"scripts": {
-		"dev": "concurrently -n 'server,client' -c 'red,green' \"nodemon app.js\" \"cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=dev PORT=8000 react-scripts start\"",
+		"dev": "IP=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | head -n 1 | awk '{print $2}') && echo \"\\n\\x1b[36mLocal:   https://localhost:8000/\\x1b[0m\" && echo \"\\x1b[36mNetwork: https://$IP:8000/\\x1b[0m\\n\" && concurrently -n 'server,client' -c 'red,green' \"nodemon app.js\" \"cross-env BROWSER=none HTTPS=true SSL_CRT_FILE=cert.pem SSL_KEY_FILE=key.pem NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=dev PORT=8000 react-scripts start\"",
 		"server": "NODE_ENV=production nodemon app.js",
 		"build": "react-scripts build",
 		"test": "react-scripts test",
