@@ -863,8 +863,8 @@ class VideoRoom extends Component {
 									borderColor: "#bdbdbd",
 									borderRadius: "12px",
 									objectFit: "cover",
-									width: "100%",
-									height: "100%",
+									width: "500px",
+									height: "300px",
 								}}
 							></video>
 						</div>
