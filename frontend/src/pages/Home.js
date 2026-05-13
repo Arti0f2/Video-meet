@@ -1,6 +1,5 @@
 import React, { Component } from "react";
-import { Input, Button, IconButton, TextField } from "@material-ui/core";
-import GitHubIcon from "@material-ui/icons/GitHub";
+import { Input, Button, TextField } from "@material-ui/core";
 import "./Home.css";
 
 const server_url =
@@ -52,11 +51,11 @@ class Home extends Component {
 	// Connecting to existing or creating a quick room
 	join = () => {
 		if (this.state.url !== "") {
-			var url = this.state.url.split("/");
-			window.location.href = `/${url[url.length - 1]}`;
+			let urlParts = this.state.url.split("/");
+			window.location.href = `/${urlParts[urlParts.length - 1]}`;
 		} else {
-			var url = Math.random().toString(36).substring(2, 7);
-			window.location.href = `/${url}`;
+			let randomUrl = Math.random().toString(36).substring(2, 7);
+			window.location.href = `/${randomUrl}`;
 		}
 	};
 
@@ -252,7 +251,9 @@ class Home extends Component {
 												fontWeight: "500",
 											}}
 										>
-											📅{" "}
+											<span role="img" aria-label="calendar">
+												📅
+											</span>{" "}
 											{new Date(meeting.date).toLocaleString([], {
 												dateStyle: "long",
 												timeStyle: "short",
@@ -314,7 +315,10 @@ class Home extends Component {
 								>
 									<div>
 										<span style={{ fontSize: "16px" }}>
-											🎥 Recording from {rec.date}
+											<span role="img" aria-label="camera">
+												🎥
+											</span>{" "}
+											Recording from {rec.date}
 										</span>
 									</div>
 									{/* Button to view video */}

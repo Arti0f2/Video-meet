@@ -35,7 +35,7 @@ var socket = null;
 var socketId = null;
 var elms = 0;
 
-class Video extends Component {
+class VideoRoom extends Component {
 	constructor(props) {
 		super(props);
 
@@ -871,7 +871,10 @@ class Video extends Component {
 															textDecoration: "underline",
 														}}
 													>
-														📁 Download {item.fileName}
+														<span role="img" aria-label="file">
+															📁
+														</span>{" "}
+														Download {item.fileName}
 													</a>
 												</p>
 											) : (
@@ -1043,4 +1046,4 @@ class Video extends Component {
 	}
 }
 
-export default Video;
+export default VideoRoom;

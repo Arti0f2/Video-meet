@@ -1,6 +1,6 @@
 import React, { Component } from "react";
-import Video from "./Video";
-import Home from "./Home";
+import VideoRoom from "./pages/VideoRoom";
+import Home from "./pages/Home";
 import { BrowserRouter as Router, Switch, Route } from "react-router-dom";
 
 class App extends Component {
@@ -10,7 +10,7 @@ class App extends Component {
 				<Router>
 					<Switch>
 						<Route path="/" exact component={Home} />
-						<Route path="/:url" component={Video} />
+						<Route path="/:url" component={VideoRoom} />
 					</Switch>
 				</Router>
 			</div>
