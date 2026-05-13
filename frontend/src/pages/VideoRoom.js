@@ -14,10 +14,10 @@ import ChatIcon from "@material-ui/icons/Chat";
 import AttachFileIcon from "@material-ui/icons/AttachFile";
 import FiberManualRecordIcon from "@material-ui/icons/FiberManualRecord";
 import StopIcon from "@material-ui/icons/Stop";
+import ShareIcon from "@material-ui/icons/Share";
 
 import { message } from "antd";
 import "antd/dist/antd.css";
-import { Row } from "reactstrap";
 import Modal from "react-bootstrap/Modal";
 import "bootstrap/dist/css/bootstrap.css";
 import "./Video.css";
@@ -45,10 +45,11 @@ class VideoRoom extends Component {
 		this.audioAvailable = false;
 
 		this.state = {
-			video: false,
-			audio: false,
+			video: true,
+			audio: true,
 			screen: false,
 			showModal: false,
+			showShareModal: false,
 			screenAvailable: false,
 			messages: [],
 			message: "",
@@ -59,6 +60,7 @@ class VideoRoom extends Component {
 			file: null,
 			recording: false,
 			inviteEmail: "",
+			usernames: {},
 		};
 		connections = {};
 		this.mediaRecorder = null;
@@ -93,7 +95,9 @@ class VideoRoom extends Component {
 					})
 					.then((stream) => {
 						window.localStream = stream;
-						this.localVideoref.current.srcObject = stream;
+						if (this.localVideoref.current) {
+							this.localVideoref.current.srcObject = stream;
+						}
 					})
 					.catch((e) => console.log(e));
 			}
@@ -105,8 +109,8 @@ class VideoRoom extends Component {
 	getMedia = () => {
 		this.setState(
 			{
-				video: this.videoAvailable,
-				audio: this.audioAvailable,
+				video: this.videoAvailable && this.state.video,
+				audio: this.audioAvailable && this.state.audio,
 			},
 			() => {
 				this.getUserMedia();
@@ -116,17 +120,17 @@ class VideoRoom extends Component {
 	};
 
 	getUserMedia = () => {
-		if (
-			(this.state.video && this.videoAvailable) ||
-			(this.state.audio && this.audioAvailable)
-		) {
+		if (this.videoAvailable || this.audioAvailable) {
 			navigator.mediaDevices
-				.getUserMedia({ video: this.state.video, audio: this.state.audio })
+				.getUserMedia({
+					video: this.videoAvailable,
+					audio: this.audioAvailable,
+				})
 				.then(this.getUserMediaSuccess)
 				.catch((e) => console.log(e));
 		} else {
 			try {
-				let tracks = this.localVideoref.current.srcObject.getTracks();
+				let tracks = window.localStream.getTracks();
 				tracks.forEach((track) => track.stop());
 			} catch (e) {}
 		}
@@ -134,176 +138,73 @@ class VideoRoom extends Component {
 
 	getUserMediaSuccess = (stream) => {
 		try {
-			window.localStream.getTracks().forEach((track) => track.stop());
-		} catch (e) {
-			console.log(e);
-		}
+			if (window.localStream) {
+				window.localStream.getTracks().forEach((track) => track.stop());
+			}
+		} catch (e) {}
 
 		window.localStream = stream;
-		this.localVideoref.current.srcObject = stream;
 
-		for (let id in connections) {
-			if (id === socketId) continue;
-
-			connections[id].addStream(window.localStream);
-
-			connections[id].createOffer().then((description) => {
-				connections[id]
-					.setLocalDescription(description)
-					.then(() => {
-						socket.emit(
-							"signal",
-							id,
-							JSON.stringify({ sdp: connections[id].localDescription }),
-						);
-					})
-					.catch((e) => console.log(e));
-			});
+		if (window.localStream.getVideoTracks().length > 0) {
+			window.localStream.getVideoTracks()[0].enabled = this.state.video;
+		}
+		if (window.localStream.getAudioTracks().length > 0) {
+			window.localStream.getAudioTracks()[0].enabled = this.state.audio;
 		}
 
-		stream.getTracks().forEach(
-			(track) =>
-				(track.onended = () => {
-					this.setState(
-						{
-							video: false,
-							audio: false,
-						},
-						() => {
-							try {
-								let tracks = this.localVideoref.current.srcObject.getTracks();
-								tracks.forEach((track) => track.stop());
-							} catch (e) {
-								console.log(e);
-							}
+		if (this.localVideoref.current) {
+			this.localVideoref.current.srcObject = stream;
+		}
 
-							let blackSilence = (...args) =>
-								new MediaStream([this.black(...args), this.silence()]);
-							window.localStream = blackSilence();
-							this.localVideoref.current.srcObject = window.localStream;
-
-							for (let id in connections) {
-								connections[id].addStream(window.localStream);
-
-								connections[id].createOffer().then((description) => {
-									connections[id]
-										.setLocalDescription(description)
-										.then(() => {
-											socket.emit(
-												"signal",
-												id,
-												JSON.stringify({
-													sdp: connections[id].localDescription,
-												}),
-											);
-										})
-										.catch((e) => console.log(e));
-								});
-							}
-						},
-					);
-				}),
-		);
-	};
-
-	getDislayMedia = () => {
-		if (this.state.screen) {
-			if (navigator.mediaDevices.getDisplayMedia) {
-				navigator.mediaDevices
-					.getDisplayMedia({ video: true, audio: true })
-					.then(this.getDislayMediaSuccess)
-					.catch((e) => console.log(e));
+		if (socketId) {
+			const container = document.querySelector(
+				`[data-container="${socketId}"]`,
+			);
+			if (container) {
+				const video = container.querySelector("video");
+				if (video) video.srcObject = stream;
 			}
 		}
-	};
-
-	getDislayMediaSuccess = (stream) => {
-		try {
-			window.localStream.getTracks().forEach((track) => track.stop());
-		} catch (e) {
-			console.log(e);
-		}
-
-		window.localStream = stream;
-		this.localVideoref.current.srcObject = stream;
 
 		for (let id in connections) {
 			if (id === socketId) continue;
-
 			connections[id].addStream(window.localStream);
-
 			connections[id].createOffer().then((description) => {
-				connections[id]
-					.setLocalDescription(description)
-					.then(() => {
-						socket.emit(
-							"signal",
-							id,
-							JSON.stringify({ sdp: connections[id].localDescription }),
-						);
-					})
-					.catch((e) => console.log(e));
+				connections[id].setLocalDescription(description).then(() => {
+					socket.emit(
+						"signal",
+						id,
+						JSON.stringify({ sdp: connections[id].localDescription }),
+					);
+				});
 			});
 		}
-
-		stream.getTracks().forEach(
-			(track) =>
-				(track.onended = () => {
-					this.setState(
-						{
-							screen: false,
-						},
-						() => {
-							try {
-								let tracks = this.localVideoref.current.srcObject.getTracks();
-								tracks.forEach((track) => track.stop());
-							} catch (e) {
-								console.log(e);
-							}
-
-							let blackSilence = (...args) =>
-								new MediaStream([this.black(...args), this.silence()]);
-							window.localStream = blackSilence();
-							this.localVideoref.current.srcObject = window.localStream;
-
-							this.getUserMedia();
-						},
-					);
-				}),
-		);
 	};
 
 	gotMessageFromServer = (fromId, message) => {
 		var signal = JSON.parse(message);
-
 		if (fromId !== socketId) {
 			if (signal.sdp) {
 				connections[fromId]
 					.setRemoteDescription(new RTCSessionDescription(signal.sdp))
 					.then(() => {
 						if (signal.sdp.type === "offer") {
-							connections[fromId]
-								.createAnswer()
-								.then((description) => {
-									connections[fromId]
-										.setLocalDescription(description)
-										.then(() => {
-											socket.emit(
-												"signal",
-												fromId,
-												JSON.stringify({
-													sdp: connections[fromId].localDescription,
-												}),
-											);
-										})
-										.catch((e) => console.log(e));
-								})
-								.catch((e) => console.log(e));
+							connections[fromId].createAnswer().then((description) => {
+								connections[fromId]
+									.setLocalDescription(description)
+									.then(() => {
+										socket.emit(
+											"signal",
+											fromId,
+											JSON.stringify({
+												sdp: connections[fromId].localDescription,
+											}),
+										);
+									});
+							});
 						}
-					})
-					.catch((e) => console.log(e));
+					});
 			}
-
 			if (signal.ice) {
 				connections[fromId]
 					.addIceCandidate(new RTCIceCandidate(signal.ice))
@@ -312,142 +213,214 @@ class VideoRoom extends Component {
 		}
 	};
 
-	changeCssVideos = (main) => {
-		let widthMain = main.offsetWidth;
-		let minWidth = "30%";
-		if ((widthMain * 30) / 100 < 300) {
-			minWidth = "300px";
-		}
-		let minHeight = "40%";
+	changeCssVideos = () => {
+		let main = document.getElementById("main");
+		if (!main) return;
 
-		let height = String(100 / elms) + "%";
-		let width = "";
-		if (elms === 0 || elms === 1) {
-			width = "100%";
-			height = "100%";
-		} else if (elms === 2) {
-			width = "45%";
-			height = "100%";
-		} else if (elms === 3 || elms === 4) {
-			width = "35%";
-			height = "50%";
+		let elmsCount = elms;
+		if (elmsCount === 0) return;
+
+		let cols, rows;
+		if (elmsCount === 1) {
+			cols = 1;
+			rows = 1;
+		} else if (elmsCount === 2) {
+			cols = 2;
+			rows = 1;
+		} else if (elmsCount <= 4) {
+			cols = 2;
+			rows = 2;
+		} else if (elmsCount <= 6) {
+			cols = 3;
+			rows = 2;
+		} else if (elmsCount <= 9) {
+			cols = 3;
+			rows = 3;
 		} else {
-			width = String(100 / elms) + "%";
+			cols = 4;
+			rows = Math.ceil(elmsCount / 4);
 		}
 
-		let videos = main.querySelectorAll("video");
-		for (let a = 0; a < videos.length; ++a) {
-			videos[a].style.minWidth = minWidth;
-			videos[a].style.minHeight = minHeight;
-			videos[a].style.setProperty("width", width);
-			videos[a].style.setProperty("height", height);
+		main.className = "video-grid";
+		main.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+		main.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+	};
+
+	addVideoContainer = (
+		socketListId,
+		username,
+		stream,
+		isVideoEnabled,
+		isAudioEnabled,
+	) => {
+		let main = document.getElementById("main");
+		if (!main) return;
+
+		let searchContainer = document.querySelector(
+			`[data-container="${socketListId}"]`,
+		);
+		if (searchContainer) {
+			const video = searchContainer.querySelector("video");
+			if (video && stream) video.srcObject = stream;
+			return;
 		}
 
-		return { minWidth, minHeight, width, height };
+		elms++;
+		this.changeCssVideos();
+
+		let container = document.createElement("div");
+		container.setAttribute("data-container", socketListId);
+		container.className = "video-container";
+
+		let placeholder = document.createElement("div");
+		placeholder.className = "video-placeholder";
+		placeholder.style.backgroundColor = this.getRandomColor(username);
+		placeholder.style.display = isVideoEnabled ? "none" : "flex";
+
+		let initialsDiv = document.createElement("div");
+		initialsDiv.className = "initials";
+		initialsDiv.innerText = username.charAt(0).toUpperCase();
+		placeholder.appendChild(initialsDiv);
+
+		let centerNameDiv = document.createElement("div");
+		centerNameDiv.className = "full-name";
+		centerNameDiv.innerHTML = `<span>${socketListId === socketId ? "You" : username}</span><span class="mic-icon" style="margin-left: 8px; color: red; display: ${isAudioEnabled ? "none" : "inline"};">🔇</span>`;
+		placeholder.appendChild(centerNameDiv);
+
+		container.appendChild(placeholder);
+
+		let nameLabel = document.createElement("div");
+		nameLabel.className = "name-label";
+		nameLabel.innerHTML = `<span>${socketListId === socketId ? "You" : username}</span><span class="mic-icon" style="margin-left: 5px; color: red; display: ${isAudioEnabled ? "none" : "inline"};">🔇</span>`;
+		nameLabel.style.display = isVideoEnabled ? "block" : "none";
+		container.appendChild(nameLabel);
+
+		let video = document.createElement("video");
+		if (socketListId === socketId) video.style.transform = "scaleX(-1)";
+		video.setAttribute("data-socket", socketListId);
+		if (stream) video.srcObject = stream;
+		video.autoplay = true;
+		video.playsinline = true;
+		if (socketListId === socketId) video.muted = true;
+
+		container.appendChild(video);
+		main.appendChild(container);
 	};
 
 	connectToSocketServer = () => {
 		socket = io.connect(server_url, { secure: true });
-
 		socket.on("signal", this.gotMessageFromServer);
-
 		socket.on("connect", () => {
-			socket.emit("join-call", window.location.href);
+			socket.emit(
+				"join-call",
+				window.location.href,
+				this.state.username,
+				this.state.video,
+				this.state.audio,
+			);
 			socketId = socket.id;
+
+			this.addVideoContainer(
+				socketId,
+				this.state.username,
+				window.localStream,
+				this.state.video,
+				this.state.audio,
+			);
 
 			socket.on("chat-message", this.addMessage);
 			socket.on("chat-file", this.addFileMessage);
-
-			socket.on("user-left", (id) => {
-				let video = document.querySelector(`[data-socket="${id}"]`);
-				if (video !== null) {
-					elms--;
-					video.parentNode.removeChild(video);
-
-					let main = document.getElementById("main");
-					this.changeCssVideos(main);
+			socket.on("user-toggle-media", (id, type, value) => {
+				const container = document.querySelector(`[data-container="${id}"]`);
+				if (container) {
+					if (type === "video") {
+						const placeholder = container.querySelector(".video-placeholder");
+						const nameLabel = container.querySelector(".name-label");
+						if (placeholder)
+							placeholder.style.display = value ? "none" : "flex";
+						if (nameLabel) nameLabel.style.display = value ? "block" : "none";
+					} else if (type === "audio") {
+						const micIcons = container.querySelectorAll(".mic-icon");
+						micIcons.forEach((icon) => {
+							icon.style.display = value ? "none" : "inline";
+						});
+					}
 				}
 			});
 
+			socket.on("user-left", (id) => {
+				let container = document.querySelector(`[data-container="${id}"]`);
+				if (container) {
+					elms--;
+					container.remove();
+					this.changeCssVideos();
+				}
+				this.setState((prevState) => {
+					const newUsernames = { ...prevState.usernames };
+					delete newUsernames[id];
+					return { usernames: newUsernames };
+				});
+			});
+
 			socket.on("user-joined", (id, clients) => {
-				clients.forEach((socketListId) => {
-					connections[socketListId] = new RTCPeerConnection(
-						peerConnectionConfig,
-					);
-					connections[socketListId].onicecandidate = function (event) {
-						if (event.candidate != null) {
-							socket.emit(
-								"signal",
-								socketListId,
-								JSON.stringify({ ice: event.candidate }),
-							);
-						}
-					};
+				let newDict = {};
+				clients.forEach((client) => {
+					newDict[client.id] = client.username;
+				});
+				this.setState((prevState) => ({
+					usernames: { ...prevState.usernames, ...newDict },
+				}));
 
-					connections[socketListId].onaddstream = (event) => {
-						var searchVidep = document.querySelector(
-							`[data-socket="${socketListId}"]`,
+				clients.forEach((client) => {
+					const socketListId = client.id;
+					if (socketListId === socketId) return;
+
+					if (connections[socketListId] === undefined) {
+						connections[socketListId] = new RTCPeerConnection(
+							peerConnectionConfig,
 						);
-						if (searchVidep !== null) {
-							searchVidep.srcObject = event.stream;
+						connections[socketListId].onicecandidate = (event) => {
+							if (event.candidate != null) {
+								socket.emit(
+									"signal",
+									socketListId,
+									JSON.stringify({ ice: event.candidate }),
+								);
+							}
+						};
+						connections[socketListId].onaddstream = (event) => {
+							this.addVideoContainer(
+								socketListId,
+								client.username,
+								event.stream,
+								client.video,
+								client.audio,
+							);
+						};
+						if (window.localStream) {
+							connections[socketListId].addStream(window.localStream);
 						} else {
-							elms = clients.length;
-							let main = document.getElementById("main");
-							let cssMesure = this.changeCssVideos(main);
-
-							let video = document.createElement("video");
-
-							let css = {
-								minWidth: cssMesure.minWidth,
-								minHeight: cssMesure.minHeight,
-								maxHeight: "100%",
-								margin: "10px",
-								borderStyle: "solid",
-								borderColor: "#bdbdbd",
-								objectFit: "fill",
-							};
-							for (let i in css) video.style[i] = css[i];
-
-							video.style.setProperty("width", cssMesure.width);
-							video.style.setProperty("height", cssMesure.height);
-							video.setAttribute("data-socket", socketListId);
-							video.srcObject = event.stream;
-							video.autoplay = true;
-							video.playsinline = true;
-
-							main.appendChild(video);
+							let blackSilence = (...args) =>
+								new MediaStream([this.black(...args), this.silence()]);
+							window.localStream = blackSilence();
+							connections[socketListId].addStream(window.localStream);
 						}
-					};
-
-					if (window.localStream !== undefined && window.localStream !== null) {
-						connections[socketListId].addStream(window.localStream);
-					} else {
-						let blackSilence = (...args) =>
-							new MediaStream([this.black(...args), this.silence()]);
-						window.localStream = blackSilence();
-						connections[socketListId].addStream(window.localStream);
 					}
 				});
-
 				if (id === socketId) {
 					for (let id2 in connections) {
 						if (id2 === socketId) continue;
-
 						try {
 							connections[id2].addStream(window.localStream);
 						} catch (e) {}
-
 						connections[id2].createOffer().then((description) => {
-							connections[id2]
-								.setLocalDescription(description)
-								.then(() => {
-									socket.emit(
-										"signal",
-										id2,
-										JSON.stringify({ sdp: connections[id2].localDescription }),
-									);
-								})
-								.catch((e) => console.log(e));
+							connections[id2].setLocalDescription(description).then(() => {
+								socket.emit(
+									"signal",
+									id2,
+									JSON.stringify({ sdp: connections[id2].localDescription }),
+								);
+							});
 						});
 					}
 				}
@@ -455,47 +428,50 @@ class VideoRoom extends Component {
 		});
 	};
 
-	// --- RECORDING LOGIC AND FOLDER SELECTION ---
+	getRandomColor = (str) => {
+		let hash = 0;
+		for (let i = 0; i < str.length; i++) {
+			hash = str.charCodeAt(i) + ((hash << 5) - hash);
+		}
+		const colors = [
+			"#2ecc71",
+			"#3498db",
+			"#9b59b6",
+			"#e67e22",
+			"#e74c3c",
+			"#1abc9c",
+			"#f1c40f",
+		];
+		return colors[Math.abs(hash) % colors.length];
+	};
+
 	startRecording = () => {
 		this.recordedChunks = [];
 		const stream = window.localStream;
-
 		if (!stream) {
 			message.error("No stream available to record.");
 			return;
 		}
-
 		let options = { mimeType: "video/webm;codecs=vp9" };
 		if (!MediaRecorder.isTypeSupported(options.mimeType)) {
 			options = { mimeType: "video/webm;codecs=vp8" };
 			if (!MediaRecorder.isTypeSupported(options.mimeType)) {
 				options = { mimeType: "video/webm" };
-				if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+				if (!MediaRecorder.isTypeSupported(options.mimeType))
 					options = { mimeType: "" };
-				}
 			}
 		}
-
 		try {
 			this.mediaRecorder = new MediaRecorder(stream, options);
-
 			this.mediaRecorder.ondataavailable = (e) => {
-				if (e.data.size > 0) {
-					this.recordedChunks.push(e.data);
-				}
+				if (e.data.size > 0) this.recordedChunks.push(e.data);
 			};
-
-			this.mediaRecorder.onstop = () => {
-				this.saveRecordingToServer();
-			};
-
-			// Start recording with a timeslice to ensure data is collected periodically
+			this.mediaRecorder.onstop = () => this.saveRecordingToServer();
 			this.mediaRecorder.start(1000);
 			this.setState({ recording: true });
 			message.success("Recording started!");
 		} catch (e) {
-			console.error("MediaRecorder error:", e);
-			message.error("Error starting recording. Check permissions.");
+			message.error("Error starting recording.");
 		}
 	};
 
@@ -512,28 +488,20 @@ class VideoRoom extends Component {
 			message.error("No recording data captured.");
 			return;
 		}
-
 		const blob = new Blob(this.recordedChunks, { type: "video/webm" });
 		const formData = new FormData();
 		formData.append("video", blob);
-
 		try {
 			const response = await fetch(`${server_url}/api/upload-recording`, {
 				method: "POST",
 				body: formData,
 			});
-			const result = await response.json();
-			if (response.ok) {
-				message.success("Recording successfully saved!");
-			} else {
-				throw new Error(result.message || "Upload failed");
-			}
+			if (response.ok) message.success("Recording successfully saved!");
+			else throw new Error("Upload failed");
 		} catch (err) {
-			console.error("Upload error:", err);
 			message.error("Error sending recording to server");
 		}
 	};
-	// ------------------------------------
 
 	silence = () => {
 		let ctx = new AudioContext();
@@ -555,40 +523,75 @@ class VideoRoom extends Component {
 	};
 
 	handleVideo = () =>
-		this.setState({ video: !this.state.video }, () => this.getUserMedia());
+		this.setState({ video: !this.state.video }, () => {
+			if (window.localStream) {
+				const videoTracks = window.localStream.getVideoTracks();
+				if (videoTracks.length > 0) {
+					videoTracks[0].enabled = this.state.video;
+				}
+			}
+			if (socket) socket.emit("toggle-media", "video", this.state.video);
+			const container = document.querySelector(
+				`[data-container="${socketId}"]`,
+			);
+			if (container) {
+				const placeholder = container.querySelector(".video-placeholder");
+				const nameLabel = container.querySelector(".name-label");
+				if (placeholder)
+					placeholder.style.display = this.state.video ? "none" : "flex";
+				if (nameLabel)
+					nameLabel.style.display = this.state.video ? "block" : "none";
+			}
+		});
+
 	handleAudio = () =>
-		this.setState({ audio: !this.state.audio }, () => this.getUserMedia());
+		this.setState({ audio: !this.state.audio }, () => {
+			if (window.localStream) {
+				const audioTracks = window.localStream.getAudioTracks();
+				if (audioTracks.length > 0) {
+					audioTracks[0].enabled = this.state.audio;
+				}
+			}
+			if (socket) socket.emit("toggle-media", "audio", this.state.audio);
+			const container = document.querySelector(
+				`[data-container="${socketId}"]`,
+			);
+			if (container) {
+				const micIcons = container.querySelectorAll(".mic-icon");
+				micIcons.forEach((icon) => {
+					icon.style.display = this.state.audio ? "none" : "inline";
+				});
+			}
+		});
+
 	handleScreen = () =>
 		this.setState({ screen: !this.state.screen }, () => this.getDislayMedia());
 
 	handleEndCall = () => {
 		try {
-			let tracks = this.localVideoref.current.srcObject.getTracks();
-			tracks.forEach((track) => track.stop());
+			window.localStream.getTracks().forEach((track) => track.stop());
 		} catch (e) {}
 		window.location.href = "/";
 	};
 
 	openChat = () => this.setState({ showModal: true, newmessages: 0 });
 	closeChat = () => this.setState({ showModal: false });
+	openShare = () => this.setState({ showShareModal: true });
+	closeShare = () => this.setState({ showShareModal: false });
 	handleMessage = (e) => this.setState({ message: e.target.value });
-
 	handleFile = (e) => {
-		if (e.target.files.length > 0) {
-			this.setState({ file: e.target.files[0] });
-		}
+		if (e.target.files.length > 0) this.setState({ file: e.target.files[0] });
 	};
 
 	addMessage = (data, sender, socketIdSender, isPrivate = false) => {
 		this.setState((prevState) => ({
 			messages: [
 				...prevState.messages,
-				{ sender: sender, data: data, isPrivate: isPrivate, isFile: false },
+				{ sender, data, isPrivate, isFile: false },
 			],
 		}));
-		if (socketIdSender !== socketId) {
+		if (socketIdSender !== socketId)
 			this.setState({ newmessages: this.state.newmessages + 1 });
-		}
 	};
 
 	addFileMessage = (
@@ -601,22 +604,14 @@ class VideoRoom extends Component {
 		this.setState((prevState) => ({
 			messages: [
 				...prevState.messages,
-				{
-					sender: sender,
-					data: data,
-					isPrivate: isPrivate,
-					isFile: true,
-					fileName: fileName,
-				},
+				{ sender, data, isPrivate, isFile: true, fileName },
 			],
 		}));
-		if (socketIdSender !== socketId) {
+		if (socketIdSender !== socketId)
 			this.setState({ newmessages: this.state.newmessages + 1 });
-		}
 	};
 
 	handleUsername = (e) => this.setState({ username: e.target.value });
-
 	handleInviteEmail = (e) => this.setState({ inviteEmail: e.target.value });
 
 	inviteByEmail = () => {
@@ -625,7 +620,6 @@ class VideoRoom extends Component {
 			message.info("Enter at least one email address to invite.");
 			return;
 		}
-
 		const recipients = rawEmails
 			.split(/[,;\s]+/)
 			.filter(Boolean)
@@ -652,7 +646,6 @@ class VideoRoom extends Component {
 				this.setState({ file: null });
 			};
 		}
-
 		if (this.state.message !== "") {
 			socket.emit(
 				"chat-message",
@@ -660,7 +653,7 @@ class VideoRoom extends Component {
 				this.state.username,
 				this.state.recipient,
 			);
-			this.setState({ message: "", sender: this.state.username });
+			this.setState({ message: "" });
 		}
 	};
 
@@ -682,17 +675,31 @@ class VideoRoom extends Component {
 			return;
 		}
 		navigator.clipboard.writeText(text).then(
-			function () {
-				message.success("Link copied to clipboard!");
-			},
-			() => {
-				message.error("Failed to copy");
-			},
+			() => message.success("Link copied to clipboard!"),
+			() => message.error("Failed to copy"),
 		);
 	};
 
 	connect = () =>
 		this.setState({ askForUsername: false }, () => this.getMedia());
+
+	handleWaitingRoomVideo = () => {
+		this.setState({ video: !this.state.video }, () => {
+			if (window.localStream) {
+				const videoTrack = window.localStream.getVideoTracks()[0];
+				if (videoTrack) videoTrack.enabled = this.state.video;
+			}
+		});
+	};
+
+	handleWaitingRoomAudio = () => {
+		this.setState({ audio: !this.state.audio }, () => {
+			if (window.localStream) {
+				const audioTrack = window.localStream.getAudioTracks()[0];
+				if (audioTrack) audioTrack.enabled = this.state.audio;
+			}
+		});
+	};
 
 	isChrome = function () {
 		let userAgent = (navigator && (navigator.userAgent || "")).toLowerCase();
@@ -724,9 +731,17 @@ class VideoRoom extends Component {
 			);
 		}
 		return (
-			<div>
+			<div className="container-fluid">
 				{this.state.askForUsername === true ? (
-					<div>
+					<div
+						style={{
+							height: "100vh",
+							display: "flex",
+							flexDirection: "column",
+							alignItems: "center",
+							justifyContent: "center",
+						}}
+					>
 						<div
 							style={{
 								background: "white",
@@ -735,103 +750,107 @@ class VideoRoom extends Component {
 								padding: "20px",
 								minWidth: "400px",
 								textAlign: "center",
-								margin: "auto",
-								marginTop: "50px",
-								justifyContent: "center",
+								borderRadius: "8px",
+								boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
 							}}
 						>
-							<p
-								style={{ margin: 0, fontWeight: "bold", paddingRight: "50px" }}
-							>
-								Set your username
-							</p>
+							<p style={{ margin: 0, fontWeight: "bold" }}>Set your username</p>
 							<Input
 								placeholder="Username"
 								value={this.state.username}
 								onChange={(e) => this.handleUsername(e)}
+								style={{ width: "100%", marginTop: "10px" }}
 							/>
+							<div style={{ marginTop: "20px" }}>
+								<IconButton
+									onClick={this.handleWaitingRoomVideo}
+									color={this.state.video ? "primary" : "default"}
+								>
+									{this.state.video ? <VideocamIcon /> : <VideocamOffIcon />}
+								</IconButton>
+								<IconButton
+									onClick={this.handleWaitingRoomAudio}
+									color={this.state.audio ? "primary" : "default"}
+								>
+									{this.state.audio ? <MicIcon /> : <MicOffIcon />}
+								</IconButton>
+							</div>
 							<Button
 								variant="contained"
 								color="primary"
 								onClick={this.connect}
-								style={{ margin: "20px" }}
+								style={{ marginTop: "20px", width: "100%" }}
 							>
 								Connect
 							</Button>
 						</div>
-
-						<div
-							style={{
-								justifyContent: "center",
-								textAlign: "center",
-								paddingTop: "40px",
-							}}
-						>
+						<div style={{ marginTop: "40px", width: "60%", height: "30vh" }}>
 							<video
 								id="my-video"
-								ref={this.localVideoref}
+								ref={(ref) => {
+									this.localVideoref.current = ref;
+									if (
+										ref &&
+										window.localStream &&
+										ref.srcObject !== window.localStream
+									) {
+										ref.srcObject = window.localStream;
+									}
+								}}
 								autoPlay
 								muted
 								style={{
 									borderStyle: "solid",
 									borderColor: "#bdbdbd",
-									objectFit: "fill",
-									width: "60%",
-									height: "30%",
+									borderRadius: "12px",
+									objectFit: "cover",
+									width: "100%",
+									height: "100%",
 								}}
 							></video>
 						</div>
 					</div>
 				) : (
-					<div>
-						<div
-							className="btn-down"
-							style={{
-								backgroundColor: "whitesmoke",
-								color: "whitesmoke",
-								textAlign: "center",
-							}}
-						>
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							height: "100vh",
+						}}
+					>
+						<div className="btn-down">
 							<IconButton
-								style={{ color: "#424242" }}
+								style={{ color: "#ffffff" }}
 								onClick={this.handleVideo}
 							>
-								{this.state.video === true ? (
-									<VideocamIcon />
-								) : (
-									<VideocamOffIcon />
-								)}
+								{this.state.video ? <VideocamIcon /> : <VideocamOffIcon />}
 							</IconButton>
-
 							<IconButton
 								style={{ color: "#f44336" }}
 								onClick={this.handleEndCall}
 							>
 								<CallEndIcon />
 							</IconButton>
-
 							<IconButton
-								style={{ color: "#424242" }}
+								style={{ color: "#ffffff" }}
 								onClick={this.handleAudio}
 							>
-								{this.state.audio === true ? <MicIcon /> : <MicOffIcon />}
+								{this.state.audio ? <MicIcon /> : <MicOffIcon />}
 							</IconButton>
-
 							{this.state.screenAvailable === true ? (
 								<IconButton
-									style={{ color: "#424242" }}
+									style={{ color: "#ffffff" }}
 									onClick={this.handleScreen}
 								>
-									{this.state.screen === true ? (
+									{this.state.screen ? (
 										<ScreenShareIcon />
 									) : (
 										<StopScreenShareIcon />
 									)}
 								</IconButton>
 							) : null}
-
 							<IconButton
-								style={{ color: this.state.recording ? "red" : "#424242" }}
+								style={{ color: this.state.recording ? "red" : "#ffffff" }}
 								onClick={
 									this.state.recording
 										? this.stopRecording
@@ -844,7 +863,13 @@ class VideoRoom extends Component {
 									<FiberManualRecordIcon />
 								)}
 							</IconButton>
-
+							<IconButton
+								style={{ color: "#ffffff" }}
+								onClick={this.openShare}
+								title="Share meeting details"
+							>
+								<ShareIcon />
+							</IconButton>
 							<Badge
 								badgeContent={this.state.newmessages}
 								max={999}
@@ -852,14 +877,13 @@ class VideoRoom extends Component {
 								onClick={this.openChat}
 							>
 								<IconButton
-									style={{ color: "#424242" }}
+									style={{ color: "#ffffff" }}
 									onClick={this.openChat}
 								>
 									<ChatIcon />
 								</IconButton>
 							</Badge>
 						</div>
-
 						<Modal
 							show={this.state.showModal}
 							onHide={this.closeChat}
@@ -868,20 +892,10 @@ class VideoRoom extends Component {
 							<Modal.Header closeButton>
 								<Modal.Title>Chat Room</Modal.Title>
 							</Modal.Header>
-							<Modal.Body
-								style={{
-									overflow: "auto",
-									overflowY: "auto",
-									height: "400px",
-									textAlign: "left",
-								}}
-							>
+							<Modal.Body style={{ overflow: "auto", height: "400px" }}>
 								{this.state.messages.length > 0 ? (
 									this.state.messages.map((item, index) => (
-										<div
-											key={index}
-											style={{ textAlign: "left", marginBottom: "10px" }}
-										>
+										<div key={index} style={{ marginBottom: "10px" }}>
 											{item.isFile ? (
 												<p style={{ wordBreak: "break-all", margin: 0 }}>
 													<b>
@@ -892,8 +906,7 @@ class VideoRoom extends Component {
 															""
 														)}
 													</b>
-													:
-													<br />
+													:<br />
 													<a
 														href={item.data}
 														download={item.fileName}
@@ -902,9 +915,6 @@ class VideoRoom extends Component {
 															textDecoration: "underline",
 														}}
 													>
-														<span role="img" aria-label="file">
-															📁
-														</span>{" "}
 														Download {item.fileName}
 													</a>
 												</p>
@@ -927,13 +937,11 @@ class VideoRoom extends Component {
 									<p>No message yet</p>
 								)}
 							</Modal.Body>
-
 							<Modal.Footer
 								style={{
 									flexWrap: "nowrap",
 									display: "flex",
 									alignItems: "center",
-									justifyContent: "space-between",
 								}}
 							>
 								<select
@@ -941,7 +949,6 @@ class VideoRoom extends Component {
 										padding: "6px",
 										borderRadius: "4px",
 										border: "1px solid #ced4da",
-										marginRight: "10px",
 									}}
 									value={this.state.recipient}
 									onChange={(e) => this.setState({ recipient: e.target.value })}
@@ -950,51 +957,28 @@ class VideoRoom extends Component {
 									{Object.keys(connections).map((id) =>
 										id !== socketId ? (
 											<option key={id} value={id}>
-												User {id.substring(0, 5)}
+												{this.state.usernames[id] ||
+													`User ${id.substring(0, 5)}`}
 											</option>
 										) : null,
 									)}
 								</select>
-
 								<input
 									type="file"
 									id="file-upload"
 									style={{ display: "none" }}
 									onChange={this.handleFile}
 								/>
-								<label
-									htmlFor="file-upload"
-									style={{ margin: 0, display: "flex", alignItems: "center" }}
-								>
-									<IconButton
-										color="primary"
-										component="span"
-										style={{ padding: "8px" }}
-									>
+								<label htmlFor="file-upload" style={{ margin: 0 }}>
+									<IconButton color="primary" component="span">
 										<AttachFileIcon />
 									</IconButton>
 								</label>
-
-								{this.state.file ? (
-									<div
-										style={{
-											maxWidth: "70px",
-											overflow: "hidden",
-											textOverflow: "ellipsis",
-											whiteSpace: "nowrap",
-											fontSize: "12px",
-											marginRight: "5px",
-										}}
-									>
-										{this.state.file.name}
-									</div>
-								) : null}
-
 								<Input
 									placeholder="Message"
 									value={this.state.message}
 									onChange={(e) => this.handleMessage(e)}
-									style={{ flexGrow: 1 }}
+									style={{ flexGrow: 1, marginLeft: "10px" }}
 								/>
 								<Button
 									variant="contained"
@@ -1007,68 +991,80 @@ class VideoRoom extends Component {
 							</Modal.Footer>
 						</Modal>
 
-						<div className="container">
-							<div style={{ paddingTop: "20px" }}>
-								<Input value={window.location.href} disable="true"></Input>
-								<Button
-									style={{
-										backgroundColor: "#3f51b5",
-										color: "whitesmoke",
-										marginLeft: "20px",
-										marginTop: "10px",
-										width: "120px",
-										fontSize: "10px",
-									}}
-									onClick={this.copyUrl}
-								>
-									Copy invite link
-								</Button>
-								<div
-									style={{
-										display: "flex",
-										flexWrap: "wrap",
-										alignItems: "center",
-										gap: "10px",
-										marginTop: "10px",
-									}}
-								>
-									<Input
-										placeholder="Enter email(s), comma separated"
-										value={this.state.inviteEmail}
-										onChange={this.handleInviteEmail}
-										style={{ minWidth: "300px" }}
-									/>
-									<Button
-										variant="contained"
-										color="secondary"
-										onClick={this.inviteByEmail}
-										style={{ marginTop: "0", width: "160px", fontSize: "10px" }}
+						{/* Share Modal */}
+						<Modal
+							show={this.state.showShareModal}
+							onHide={this.closeShare}
+							style={{ zIndex: "999999" }}
+							centered
+						>
+							<Modal.Header closeButton>
+								<Modal.Title>Share Meeting</Modal.Title>
+							</Modal.Header>
+							<Modal.Body style={{ padding: "20px" }}>
+								<div style={{ marginBottom: "20px" }}>
+									<p style={{ fontWeight: "bold", margin: 0 }}>Meeting Code:</p>
+									<div
+										style={{
+											padding: "10px",
+											backgroundColor: "#f1f3f4",
+											borderRadius: "4px",
+											fontSize: "16px",
+											marginTop: "5px",
+											fontFamily: "monospace",
+										}}
 									>
-										Invite by email
-									</Button>
+										{window.location.pathname.replace("/", "")}
+									</div>
 								</div>
-							</div>
 
-							<Row
-								id="main"
-								className="flex-container"
-								style={{ margin: 0, padding: 0 }}
-							>
-								<video
-									id="my-video"
-									ref={this.localVideoref}
-									autoPlay
-									muted
-									style={{
-										borderStyle: "solid",
-										borderColor: "#bdbdbd",
-										margin: "10px",
-										objectFit: "fill",
-										width: "100%",
-										height: "100%",
-									}}
-								></video>
-							</Row>
+								<div style={{ marginBottom: "20px" }}>
+									<p style={{ fontWeight: "bold", margin: 0 }}>Meeting Link:</p>
+									<div style={{ display: "flex", marginTop: "5px" }}>
+										<Input
+											value={window.location.href}
+											disabled
+											style={{ flexGrow: 1 }}
+										/>
+										<Button
+											variant="contained"
+											color="primary"
+											style={{ marginLeft: "10px", textTransform: "none" }}
+											onClick={this.copyUrl}
+										>
+											Copy Link
+										</Button>
+									</div>
+								</div>
+
+								<div>
+									<p style={{ fontWeight: "bold", margin: 0 }}>
+										Invite by Email:
+									</p>
+									<div style={{ display: "flex", marginTop: "5px" }}>
+										<Input
+											placeholder="Enter email(s), comma separated"
+											value={this.state.inviteEmail}
+											onChange={this.handleInviteEmail}
+											style={{ flexGrow: 1 }}
+										/>
+										<Button
+											variant="contained"
+											color="secondary"
+											onClick={this.inviteByEmail}
+											style={{ marginLeft: "10px", textTransform: "none" }}
+										>
+											Send Email
+										</Button>
+									</div>
+								</div>
+							</Modal.Body>
+						</Modal>
+
+						<div
+							style={{ flexGrow: 1, overflow: "hidden", position: "relative" }}
+						>
+							<div id="main" className="video-grid"></div>
 						</div>
 					</div>
 				)}

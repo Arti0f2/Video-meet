@@ -6,6 +6,7 @@ class SocketHandler {
 		this.connections = {};
 		this.messages = {};
 		this.timeOnline = {};
+		this.users = {}; // mapping socketId to {username, video, audio}
 		this.setup();
 	}
 
@@ -20,28 +21,46 @@ class SocketHandler {
 	}
 
 	handleConnection(socket) {
-		socket.on("join-call", (path) => this.onJoinCall(socket, path));
-		socket.on("signal", (toId, message) => this.onSignal(socket, toId, message));
+		socket.on("join-call", (path, username, video, audio) =>
+			this.onJoinCall(socket, path, username, video, audio),
+		);
+		socket.on("signal", (toId, message) =>
+			this.onSignal(socket, toId, message),
+		);
 		socket.on("chat-message", (data, sender, toSocketId) =>
 			this.onChatMessage(socket, data, sender, toSocketId),
 		);
 		socket.on("chat-file", (data, sender, toSocketId, fileName) =>
 			this.onChatFile(socket, data, sender, toSocketId, fileName),
 		);
+		socket.on("toggle-media", (type, value) =>
+			this.onToggleMedia(socket, type, value),
+		);
 		socket.on("disconnect", () => this.onDisconnect(socket));
 	}
 
-	onJoinCall(socket, path) {
+	onJoinCall(socket, path, username, video = true, audio = true) {
 		if (this.connections[path] === undefined) {
 			this.connections[path] = [];
 		}
 		this.connections[path].push(socket.id);
 		this.timeOnline[socket.id] = new Date();
+		this.users[socket.id] = {
+			username: this.sanitize(username || "Guest"),
+			video: video,
+			audio: audio,
+		};
+
+		// Gather current users with their details
+		const clientsInfo = this.connections[path].map((id) => ({
+			id,
+			...this.users[id],
+		}));
 
 		for (let a = 0; a < this.connections[path].length; ++a) {
 			this.io
 				.to(this.connections[path][a])
-				.emit("user-joined", socket.id, this.connections[path]);
+				.emit("user-joined", socket.id, clientsInfo);
 		}
 
 		if (this.messages[path] !== undefined) {
@@ -61,18 +80,34 @@ class SocketHandler {
 								msg["socket-id-sender"],
 								msg.isPrivate,
 								msg.fileName,
-						  ]
+							]
 						: [msg.data, msg.sender, msg["socket-id-sender"], msg.isPrivate];
 
 					this.io.to(socket.id).emit(event, ...args);
 				}
 			}
 		}
-		console.log(`User ${socket.id} joined room: ${path}`);
+		console.log(
+			`User ${socket.id} (${this.users[socket.id].username}) joined room: ${path}`,
+		);
 	}
 
 	onSignal(socket, toId, message) {
 		this.io.to(toId).emit("signal", socket.id, message);
+	}
+
+	onToggleMedia(socket, type, value) {
+		if (this.users[socket.id]) {
+			this.users[socket.id][type] = value;
+		}
+		let roomKey = this.findUserRoom(socket.id);
+		if (roomKey && this.connections[roomKey]) {
+			for (let a = 0; a < this.connections[roomKey].length; ++a) {
+				this.io
+					.to(this.connections[roomKey][a])
+					.emit("user-toggle-media", socket.id, type, value);
+			}
+		}
 	}
 
 	onChatMessage(socket, data, sender, toSocketId) {
@@ -94,9 +129,13 @@ class SocketHandler {
 			});
 
 			if (isPrivate) {
-				this.io.to(toSocketId).emit("chat-message", data, sender, socket.id, true);
+				this.io
+					.to(toSocketId)
+					.emit("chat-message", data, sender, socket.id, true);
 				if (toSocketId !== socket.id) {
-					this.io.to(socket.id).emit("chat-message", data, sender, socket.id, true);
+					this.io
+						.to(socket.id)
+						.emit("chat-message", data, sender, socket.id, true);
 				}
 			} else {
 				for (let a = 0; a < this.connections[roomKey].length; ++a) {
@@ -169,6 +208,7 @@ class SocketHandler {
 			}
 		}
 		delete this.timeOnline[socket.id];
+		delete this.users[socket.id];
 	}
 
 	findUserRoom(socketId) {
