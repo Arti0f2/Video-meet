@@ -5,7 +5,7 @@
 	"scripts": {
 		"cert": "openssl req -x509 -newkey rsa:4096 -keyout backend/key.pem -out backend/cert.pem -days 365 -nodes -subj '/CN=localhost'",
 		"install-all": "npm install && cd backend && npm install && cd ../frontend && npm install --legacy-peer-deps && cd .. && npm run cert",
-		"dev": "IP=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | head -n 1 | awk '{print $2}') && echo \"\\n\\x1b[36mLocal:   http://localhost:8000/\\x1b[0m\" && echo \"\\x1b[36mNetwork: https://$IP:8000/\\x1b[0m\\n\" && concurrently -n 'server,client' -c 'red,green' \"npm run dev --prefix backend\" \"npm start --prefix frontend\""
+		"dev": "IP=$(ifconfig | grep 'inet ' | grep -v '127.0.0.1' | head -n 1 | awk '{print $2}') && echo \"\\n\\x1b[36mLocal:   https://localhost:8000/\\x1b[0m\" && echo \"\\x1b[36mNetwork: https://$IP:8000/\\x1b[0m\\n\" && concurrently -n 'server,client' -c 'red,green' \"npm run dev --prefix backend\" \"npm start --prefix frontend\""
 	},
 	"devDependencies": {
 		"concurrently": "^5.1.0",
